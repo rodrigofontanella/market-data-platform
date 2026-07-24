@@ -1,0 +1,5 @@
+confluent-kafka
+pydantic
+pydantic-settings
+SQLAlchemy
+psycopg[binary]
