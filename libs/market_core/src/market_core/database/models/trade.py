@@ -4,14 +4,14 @@ from uuid import UUID
 
 from sqlalchemy import DateTime, Integer, Numeric, String, func
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 
-
-class Base(DeclarativeBase):
-    pass
+from market_core.database.base import Base
 
 
 class Trade(Base):
+    """Persisted trade record stored in PostgreSQL."""
+
     __tablename__ = "trades"
 
     id: Mapped[int] = mapped_column(

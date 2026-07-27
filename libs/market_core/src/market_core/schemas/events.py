@@ -30,20 +30,3 @@ class TradeEvent(BaseModel):
         default=1,
         ge=1,
     )
-
-
-class TradeResponse(BaseModel):
-    """Public representation returned by the FastAPI application."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    event_id: UUID
-    event_type: str
-    symbol: str
-    price: Decimal
-    volume: int
-    event_time: datetime
-    source: str
-    schema_version: int
-    created_at: datetime
