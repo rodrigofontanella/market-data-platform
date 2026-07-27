@@ -30,6 +30,7 @@ def generate_trade(symbol: str) -> TradeEvent:
         price=round(base_price + price_change, 2),
         volume=random.randint(1, 1_000),
         timestamp=datetime.now(timezone.utc),
+        source="simulator",
     )
 
 
