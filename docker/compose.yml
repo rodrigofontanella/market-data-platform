@@ -52,6 +52,93 @@ services:
 
     restart: unless-stopped
 
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.python
+
+    image: market-data-platform-python
+
+    working_dir: /app/apps/api
+
+    command:
+      [
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+      ]
+
+    environment:
+      DATABASE_URL: postgresql+psycopg://market_user:market_password@postgres:5432/market_data
+
+    ports:
+      - "8000:8000"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    networks:
+      - market-data-network
+
+    restart: unless-stopped
+
+  producer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.python
+
+    image: market-data-platform-python
+
+    working_dir: /app/apps/producer
+
+    command: ["python", "-m", "app.main"]
+
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: market.trades.raw
+      PRODUCER_INTERVAL_SECONDS: "1.0"
+
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+    networks:
+      - market-data-network
+
+    restart: unless-stopped
+
+  consumer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.python
+
+    image: market-data-platform-python
+
+    working_dir: /app/apps/consumer
+
+    command: ["python", "-m", "app.main"]
+
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: market.trades.raw
+      KAFKA_GROUP_ID: market-trades-storage-v1
+      DATABASE_URL: postgresql+psycopg://market_user:market_password@postgres:5432/market_data
+
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+    networks:
+      - market-data-network
+
+    restart: unless-stopped
+
 volumes:
   kafka_data:
 

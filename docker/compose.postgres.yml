@@ -2,14 +2,18 @@ services:
   postgres:
     image: postgres:16
     container_name: market-data-postgres
+
     environment:
       POSTGRES_DB: market_data
       POSTGRES_USER: market_user
       POSTGRES_PASSWORD: market_password
+
     ports:
       - "5433:5432"
+
     volumes:
       - market_postgres_data:/var/lib/postgresql/data
+
     healthcheck:
       test:
         [
@@ -19,7 +23,15 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+    networks:
+      - market-data-network
+
     restart: unless-stopped
 
 volumes:
   market_postgres_data:
+
+networks:
+  market-data-network:
+    name: market-data-network
