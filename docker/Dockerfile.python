@@ -1,0 +1,28 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        librdkafka-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY libs/market_core ./libs/market_core
+
+RUN pip install --no-cache-dir -e ./libs/market_core
+
+# Requirements are copied first to maximise Docker cache reuse.
+COPY apps/api/requirements.txt /tmp/api.txt
+COPY apps/producer/requirements.txt /tmp/producer.txt
+COPY apps/consumer/requirements.txt /tmp/consumer.txt
+
+RUN pip install --no-cache-dir \
+    -r /tmp/api.txt \
+    -r /tmp/producer.txt \
+    -r /tmp/consumer.txt
+
+COPY apps ./apps
