@@ -4,12 +4,12 @@ services:
     container_name: market-data-postgres
 
     environment:
-      POSTGRES_DB: market_data
-      POSTGRES_USER: market_user
-      POSTGRES_PASSWORD: market_password
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 
     ports:
-      - "5433:5432"
+      - "${POSTGRES_HOST_PORT}:5432"
 
     volumes:
       - market_postgres_data:/var/lib/postgresql/data
@@ -18,7 +18,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U market_user -d market_data",
+          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}",
         ]
       interval: 5s
       timeout: 5s

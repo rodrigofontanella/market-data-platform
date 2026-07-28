@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
-from market_core import Base, Trade, TradeEvent
+from market_core import Trade, TradeEvent
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +20,6 @@ SessionLocal = sessionmaker(
     bind=engine,
     expire_on_commit=False,
 )
-
-
-def create_tables() -> None:
-    Base.metadata.create_all(bind=engine)
 
 
 def get_session() -> Generator[Session, None, None]:
