@@ -54,6 +54,36 @@ services:
 
     restart: unless-stopped
 
+  migrate:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.python
+
+    image: market-data-platform-python
+
+    working_dir: /app
+
+    command:
+      [
+        "alembic",
+        "-c",
+        "/app/alembic.ini",
+        "upgrade",
+        "head",
+      ]
+
+    environment:
+      DATABASE_URL: ${DOCKER_DATABASE_URL}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    networks:
+      - market-data-network
+
+    restart: "no"
+
   api:
     build:
       context: ..
@@ -79,8 +109,8 @@ services:
       - "${API_HOST_PORT}:8000"
 
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
     networks:
       - market-data-network
@@ -130,8 +160,8 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
     networks:
       - market-data-network

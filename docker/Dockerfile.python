@@ -26,3 +26,7 @@ RUN pip install --no-cache-dir \
     -r /tmp/consumer.txt
 
 COPY apps ./apps
+
+# Alembic migration files
+COPY alembic.ini ./alembic.ini
+COPY migrations ./migrations
