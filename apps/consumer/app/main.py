@@ -1,7 +1,6 @@
 import logging
 
 from app.consumer import TradeStorageConsumer
-from app.database import create_tables
 
 logging.basicConfig(
     level=logging.INFO,
@@ -13,8 +12,6 @@ logging.basicConfig(
 
 
 def main() -> None:
-    create_tables()
-
     consumer = TradeStorageConsumer()
     consumer.run()
 
