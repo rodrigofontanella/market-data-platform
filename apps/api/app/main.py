@@ -8,6 +8,7 @@ from app.config import settings
 from app.routes import router
 from market_core.logging import configure_logging
 from app.middleware import RequestContextMiddleware
+from app.health import router as health_router
 
 
 # Configure logging before the application starts producing logs.
@@ -52,7 +53,7 @@ app = FastAPI(
 )
 
 app.add_middleware(RequestContextMiddleware)
-
+app.include_router(health_router)
 app.include_router(router)
 
 
