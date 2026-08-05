@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from app.config import settings
 from app.routes import router
 from market_core.logging import configure_logging
+from app.middleware import RequestContextMiddleware
 
 
 # Configure logging before the application starts producing logs.
@@ -49,6 +50,8 @@ app = FastAPI(
     ),
     lifespan=lifespan,
 )
+
+app.add_middleware(RequestContextMiddleware)
 
 app.include_router(router)
 
