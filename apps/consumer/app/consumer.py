@@ -10,6 +10,7 @@ from app.config import settings
 from app.database import SessionLocal, save_trade
 from market_core import TradeEvent
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,10 +22,10 @@ class TradeStorageConsumer:
                 "group.id": settings.kafka_group_id,
                 "auto.offset.reset": "earliest",
                 "enable.auto.commit": False,
-                "session.timeout.ms": 45000,
-                "heartbeat.interval.ms": 15000,
-                "max.poll.interval.ms": 300000,
-                "socket.timeout.ms": 60000,
+                "session.timeout.ms": 45_000,
+                "heartbeat.interval.ms": 15_000,
+                "max.poll.interval.ms": 300_000,
+                "socket.timeout.ms": 60_000,
             }
         )
 
@@ -32,9 +33,12 @@ class TradeStorageConsumer:
         self.consumer.subscribe([settings.kafka_topic])
 
         logger.info(
-            "Consumer started: topic=%s group=%s",
-            settings.kafka_topic,
-            settings.kafka_group_id,
+            "consumer_started",
+            extra={
+                "topic": settings.kafka_topic,
+                "consumer_group": settings.kafka_group_id,
+                "brokers": settings.kafka_bootstrap_servers,
+            },
         )
 
         try:
@@ -53,16 +57,31 @@ class TradeStorageConsumer:
                 self._process_message(message)
 
         except KeyboardInterrupt:
-            logger.info("Consumer stopped by user")
+            logger.info("consumer_interrupted")
 
         except KafkaException:
-            logger.exception("Kafka consumer error")
+            logger.exception(
+                "consumer_kafka_failed",
+                extra={
+                    "topic": settings.kafka_topic,
+                    "consumer_group": settings.kafka_group_id,
+                },
+            )
+            raise
 
         finally:
-            logger.info("Closing Kafka consumer")
+            logger.info("consumer_stopping")
             self.consumer.close()
+            logger.info("consumer_stopped")
 
     def _process_message(self, message: Message) -> None:
+        kafka_context = {
+            "topic": message.topic(),
+            "partition": message.partition(),
+            "offset": message.offset(),
+            "consumer_group": settings.kafka_group_id,
+        }
+
         try:
             payload: Any = json.loads(
                 message.value().decode("utf-8")
@@ -81,15 +100,24 @@ class TradeStorageConsumer:
 
             if inserted:
                 logger.info(
-                    "Stored trade: symbol=%s price=%s event_id=%s",
-                    event.symbol,
-                    event.price,
-                    event.event_id,
+                    "trade_stored",
+                    extra={
+                        **kafka_context,
+                        "event_id": str(event.event_id),
+                        "symbol": event.symbol,
+                        "price": event.price,
+                        "volume": event.volume,
+                        "schema_version": event.schema_version,
+                    },
                 )
             else:
                 logger.warning(
-                    "Duplicate event ignored: event_id=%s",
-                    event.event_id,
+                    "duplicate_trade_ignored",
+                    extra={
+                        **kafka_context,
+                        "event_id": str(event.event_id),
+                        "symbol": event.symbol,
+                    },
                 )
 
             # Commit only after the PostgreSQL transaction succeeds.
@@ -98,32 +126,48 @@ class TradeStorageConsumer:
                 asynchronous=False,
             )
 
-        except (json.JSONDecodeError, UnicodeDecodeError, ValidationError) as error:
-            logger.error(
-                "Invalid event at partition=%s offset=%s: %s",
-                message.partition(),
-                message.offset(),
-                error,
+            logger.debug(
+                "kafka_offset_committed",
+                extra={
+                    **kafka_context,
+                    "event_id": str(event.event_id),
+                },
             )
 
-            # Temporary policy: skip malformed events.
+        except (
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+            ValidationError,
+        ) as error:
+            logger.error(
+                "invalid_trade_event",
+                extra={
+                    **kafka_context,
+                    "error_type": type(error).__name__,
+                    "error": str(error),
+                },
+            )
+
+            # Temporary policy: malformed records are skipped.
             self.consumer.commit(
                 message=message,
                 asynchronous=False,
             )
 
+            logger.warning(
+                "invalid_event_offset_committed",
+                extra=kafka_context,
+            )
+
         except SQLAlchemyError:
             logger.exception(
-                "Database error at partition=%s offset=%s. "
-                "Kafka offset was not committed.",
-                message.partition(),
-                message.offset(),
+                "trade_database_failed",
+                extra=kafka_context,
             )
 
         except KafkaException:
             logger.exception(
-                "Kafka commit error at partition=%s offset=%s",
-                message.partition(),
-                message.offset(),
+                "kafka_offset_commit_failed",
+                extra=kafka_context,
             )
             raise

@@ -15,7 +15,11 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 
-settings = DatabaseSettings()
+class MigrationSettings(DatabaseSettings):
+    service_name: str = "migrate"
+
+
+settings = MigrationSettings()
 
 config.set_main_option(
     "sqlalchemy.url",

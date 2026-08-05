@@ -1,18 +1,22 @@
 import logging
 import random
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.config import settings
 from app.producer import MarketDataProducer
 from market_core import TradeEvent
+from market_core.logging import configure_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+
+configure_logging(
+    service_name=settings.service_name,
+    log_level=settings.log_level,
+    log_format=settings.log_format,
 )
 
 logger = logging.getLogger(__name__)
+
 
 BASE_PRICES = {
     "AAPL": 215.00,
@@ -29,7 +33,7 @@ def generate_trade(symbol: str) -> TradeEvent:
         symbol=symbol,
         price=round(base_price + price_change, 2),
         volume=random.randint(1, 1_000),
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         source="simulator",
     )
 
@@ -41,9 +45,12 @@ def run() -> None:
     )
 
     logger.info(
-        "Starting producer: brokers=%s topic=%s",
-        settings.kafka_bootstrap_servers,
-        settings.kafka_topic,
+        "producer_starting",
+        extra={
+            "brokers": settings.kafka_bootstrap_servers,
+            "topic": settings.kafka_topic,
+            "interval_seconds": settings.producer_interval_seconds,
+        },
     )
 
     try:
@@ -54,19 +61,36 @@ def run() -> None:
             producer.publish_trade(trade)
 
             logger.info(
-                "Published trade: symbol=%s price=%s volume=%s",
-                trade.symbol,
-                trade.price,
-                trade.volume,
+                "trade_published",
+                extra={
+                    "event_id": str(trade.event_id),
+                    "symbol": trade.symbol,
+                    "price": trade.price,
+                    "volume": trade.volume,
+                    "topic": settings.kafka_topic,
+                    "schema_version": trade.schema_version,
+                },
             )
 
             time.sleep(settings.producer_interval_seconds)
 
     except KeyboardInterrupt:
-        logger.info("Producer stopped by user")
+        logger.info("producer_interrupted")
+
+    except Exception:
+        logger.exception(
+            "producer_failed",
+            extra={
+                "topic": settings.kafka_topic,
+                "brokers": settings.kafka_bootstrap_servers,
+            },
+        )
+        raise
 
     finally:
+        logger.info("producer_stopping")
         producer.close()
+        logger.info("producer_stopped")
 
 
 if __name__ == "__main__":
