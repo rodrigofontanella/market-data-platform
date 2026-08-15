@@ -11,9 +11,20 @@ from fastapi import Request, Response
 from market_core.logging import reset_request_id, set_request_id
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.metrics import (
+    HTTP_REQUEST_DURATION_SECONDS,
+    HTTP_REQUESTS_TOTAL,
+)
+
 
 logger = logging.getLogger(__name__)
 
+EXCLUDED_METRIC_PATHS = {
+    "/metrics",
+    "/metrics/",
+    "/health/live",
+    "/health/ready",
+}
 
 REQUEST_ID_HEADER: Final = "X-Request-ID"
 
@@ -32,6 +43,18 @@ def _resolve_request_id(request: Request) -> str:
         return supplied_request_id
 
     return str(uuid4())
+
+
+def _get_route_template(request: Request) -> str:
+    route = request.scope.get("route")
+
+    if route is not None:
+        path = getattr(route, "path", None)
+
+        if path:
+            return path
+
+    return "unmatched"
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
@@ -58,34 +81,60 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
 
         except Exception:
-            duration_ms = round(
-                (time.perf_counter() - started_at) * 1_000,
-                2,
-            )
+            duration_seconds = time.perf_counter() - started_at
+            duration_ms = round(duration_seconds * 1_000, 2)
+
+            route_template = _get_route_template(request)
+
+            if request.url.path not in EXCLUDED_METRIC_PATHS:
+                HTTP_REQUESTS_TOTAL.labels(
+                    method=request.method,
+                    path=route_template,
+                    status_code="500",
+                ).inc()
+
+                HTTP_REQUEST_DURATION_SECONDS.labels(
+                    method=request.method,
+                    path=route_template,
+                ).observe(duration_seconds)
 
             logger.exception(
                 "request_failed",
                 extra={
                     "http_method": request.method,
                     "http_path": request.url.path,
+                    "http_route": route_template,
                     "duration_ms": duration_ms,
                 },
             )
             raise
 
         else:
-            duration_ms = round(
-                (time.perf_counter() - started_at) * 1_000,
-                2,
-            )
+            duration_seconds = time.perf_counter() - started_at
+            duration_ms = round(duration_seconds * 1_000, 2)
 
             response.headers[REQUEST_ID_HEADER] = request_id
+
+            route_template = _get_route_template(request)
+
+            if request.url.path not in EXCLUDED_METRIC_PATHS:
+                HTTP_REQUESTS_TOTAL.labels(
+                    method=request.method,
+                    path=route_template,
+                    status_code=str(response.status_code),
+                ).inc()
+
+                HTTP_REQUEST_DURATION_SECONDS.labels(
+                    method=request.method,
+                    path=route_template,
+                ).observe(duration_seconds)
 
             logger.info(
                 "request_completed",
                 extra={
                     "http_method": request.method,
                     "http_path": request.url.path,
+                    "http_route": route_template,
                     "http_status_code": response.status_code,
                     "duration_ms": duration_ms,
                 },

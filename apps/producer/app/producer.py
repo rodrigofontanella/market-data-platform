@@ -1,8 +1,13 @@
 import logging
 
-from confluent_kafka import Producer
+from confluent_kafka import Message, Producer
 
+from app.metrics import (
+    PRODUCER_PUBLISH_FAILURES_TOTAL,
+    TRADES_PUBLISHED_TOTAL,
+)
 from market_core import TradeEvent
+
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +15,7 @@ logger = logging.getLogger(__name__)
 class MarketDataProducer:
     def __init__(self, bootstrap_servers: str, topic: str) -> None:
         self.topic = topic
+
         self.producer = Producer(
             {
                 "bootstrap.servers": bootstrap_servers,
@@ -18,17 +24,45 @@ class MarketDataProducer:
             }
         )
 
-    @staticmethod
-    def _delivery_report(error, message) -> None:
+    def _delivery_report(
+        self,
+        error,
+        message: Message,
+    ) -> None:
+        symbol = (
+            message.key().decode("utf-8")
+            if message.key()
+            else "unknown"
+        )
+
         if error is not None:
-            logger.error("Message delivery failed: %s", error)
+            PRODUCER_PUBLISH_FAILURES_TOTAL.labels(
+                failure_type="delivery",
+            ).inc()
+
+            logger.error(
+                "trade_delivery_failed",
+                extra={
+                    "symbol": symbol,
+                    "topic": message.topic(),
+                    "error": str(error),
+                },
+            )
             return
 
+        TRADES_PUBLISHED_TOTAL.labels(
+            symbol=symbol,
+            topic=message.topic(),
+        ).inc()
+
         logger.info(
-            "Message delivered to topic=%s partition=%s offset=%s",
-            message.topic(),
-            message.partition(),
-            message.offset(),
+            "trade_delivered",
+            extra={
+                "symbol": symbol,
+                "topic": message.topic(),
+                "partition": message.partition(),
+                "offset": message.offset(),
+            },
         )
 
     def publish_trade(self, trade: TradeEvent) -> None:
@@ -41,9 +75,19 @@ class MarketDataProducer:
             callback=self._delivery_report,
         )
 
-        # Triggers delivery callbacks without blocking for all messages.
         self.producer.poll(0)
 
     def close(self) -> None:
-        logger.info("Flushing pending Kafka messages")
-        self.producer.flush(10)
+        logger.info("producer_flushing")
+
+        remaining = self.producer.flush(10)
+
+        if remaining > 0:
+            logger.warning(
+                "producer_flush_incomplete",
+                extra={
+                    "undelivered_messages": remaining,
+                },
+            )
+        else:
+            logger.info("producer_flushed")

@@ -1,3 +1,4 @@
 confluent-kafka
 pydantic
 pydantic-settings
+prometheus-client

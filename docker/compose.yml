@@ -131,6 +131,8 @@ services:
     restart: unless-stopped
 
   producer:
+    ports:
+      - "9102:9102"
     build:
       context: ..
       dockerfile: docker/Dockerfile.python
@@ -155,6 +157,8 @@ services:
     restart: unless-stopped
 
   consumer:
+    ports:
+    - "9101:9101"
     build:
       context: ..
       dockerfile: docker/Dockerfile.python

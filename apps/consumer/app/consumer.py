@@ -10,6 +10,17 @@ from app.config import settings
 from app.database import SessionLocal, save_trade
 from market_core import TradeEvent
 
+import time
+
+from app.metrics import (
+    CONSUMER_FAILURES_TOTAL,
+    CONSUMER_PROCESSING_DURATION_SECONDS,
+    DUPLICATE_TRADES_TOTAL,
+    INVALID_EVENTS_TOTAL,
+    TRADES_CONSUMED_TOTAL,
+    TRADES_STORED_TOTAL,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -75,12 +86,18 @@ class TradeStorageConsumer:
             logger.info("consumer_stopped")
 
     def _process_message(self, message: Message) -> None:
+        started_at = time.perf_counter()
+
         kafka_context = {
             "topic": message.topic(),
             "partition": message.partition(),
             "offset": message.offset(),
             "consumer_group": settings.kafka_group_id,
         }
+
+        TRADES_CONSUMED_TOTAL.labels(
+            topic=message.topic(),
+                ).inc()
 
         try:
             payload: Any = json.loads(
@@ -99,6 +116,9 @@ class TradeStorageConsumer:
                     raise
 
             if inserted:
+                TRADES_STORED_TOTAL.labels(
+                    symbol=event.symbol,
+                        ).inc()
                 logger.info(
                     "trade_stored",
                     extra={
@@ -111,6 +131,8 @@ class TradeStorageConsumer:
                     },
                 )
             else:
+                DUPLICATE_TRADES_TOTAL.inc()
+
                 logger.warning(
                     "duplicate_trade_ignored",
                     extra={
@@ -138,7 +160,11 @@ class TradeStorageConsumer:
             json.JSONDecodeError,
             UnicodeDecodeError,
             ValidationError,
-        ) as error:
+            ) as error:
+            
+            INVALID_EVENTS_TOTAL.labels(
+                error_type=type(error).__name__,
+                    ).inc()
             logger.error(
                 "invalid_trade_event",
                 extra={
@@ -160,14 +186,29 @@ class TradeStorageConsumer:
             )
 
         except SQLAlchemyError:
+            CONSUMER_FAILURES_TOTAL.labels(
+                failure_type="database",
+                    ).inc()
+
             logger.exception(
                 "trade_database_failed",
                 extra=kafka_context,
             )
 
         except KafkaException:
+            CONSUMER_FAILURES_TOTAL.labels(
+                failure_type="kafka",
+                    ).inc()
+
             logger.exception(
                 "kafka_offset_commit_failed",
                 extra=kafka_context,
             )
             raise
+
+        finally:
+            duration_seconds = time.perf_counter() - started_at
+
+            CONSUMER_PROCESSING_DURATION_SECONDS.observe(
+                duration_seconds
+    )

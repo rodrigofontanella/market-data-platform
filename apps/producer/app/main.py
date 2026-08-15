@@ -8,6 +8,15 @@ from app.producer import MarketDataProducer
 from market_core import TradeEvent
 from market_core.logging import configure_logging
 
+from prometheus_client import start_http_server
+
+from app.metrics import (
+    PRODUCER_PUBLISH_DURATION_SECONDS,
+    PRODUCER_PUBLISH_FAILURES_TOTAL,
+    TRADES_GENERATED_TOTAL,
+    TRADES_PUBLISHED_TOTAL,
+)
+
 
 configure_logging(
     service_name=settings.service_name,
@@ -39,6 +48,13 @@ def generate_trade(symbol: str) -> TradeEvent:
 
 
 def run() -> None:
+
+    start_http_server(9102)
+
+    logger.info(
+        "metrics_server_started",
+        extra={"metrics_port": 9102},
+)
     producer = MarketDataProducer(
         bootstrap_servers=settings.kafka_bootstrap_servers,
         topic=settings.kafka_topic,
@@ -53,44 +69,59 @@ def run() -> None:
         },
     )
 
-    try:
-        while True:
+    while True:
             symbol = random.choice(list(BASE_PRICES))
             trade = generate_trade(symbol)
 
-            producer.publish_trade(trade)
+            TRADES_GENERATED_TOTAL.labels(
+                symbol=trade.symbol,
+                    ).inc()
 
-            logger.info(
-                "trade_published",
-                extra={
-                    "event_id": str(trade.event_id),
-                    "symbol": trade.symbol,
-                    "price": trade.price,
-                    "volume": trade.volume,
-                    "topic": settings.kafka_topic,
-                    "schema_version": trade.schema_version,
-                },
-            )
+            publish_started_at = time.perf_counter()
+
+            try:
+                producer.publish_trade(trade)
+
+            except Exception as error:
+                PRODUCER_PUBLISH_FAILURES_TOTAL.labels(
+                    failure_type=type(error).__name__,
+                        ).inc()
+
+                logger.exception(
+                    "trade_publish_failed",
+                    extra={
+                        "event_id": str(trade.event_id),
+                        "symbol": trade.symbol,
+                        "topic": settings.kafka_topic,
+                    },
+                )
+
+                raise
+
+            else:
+                logger.info(
+                    "trade_published",
+                    extra={
+                        "event_id": str(trade.event_id),
+                        "symbol": trade.symbol,
+                        "price": trade.price,
+                        "volume": trade.volume,
+                        "topic": settings.kafka_topic,
+                        "schema_version": trade.schema_version,
+                    },
+                )
+
+            finally:
+                publish_duration_seconds = (
+                    time.perf_counter() - publish_started_at
+                )
+
+                PRODUCER_PUBLISH_DURATION_SECONDS.observe(
+                    publish_duration_seconds
+                )
 
             time.sleep(settings.producer_interval_seconds)
 
-    except KeyboardInterrupt:
-        logger.info("producer_interrupted")
-
-    except Exception:
-        logger.exception(
-            "producer_failed",
-            extra={
-                "topic": settings.kafka_topic,
-                "brokers": settings.kafka_bootstrap_servers,
-            },
-        )
-        raise
-
-    finally:
-        logger.info("producer_stopping")
-        producer.close()
-        logger.info("producer_stopped")
 
 
 if __name__ == "__main__":

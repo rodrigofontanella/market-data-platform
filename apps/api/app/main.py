@@ -9,6 +9,7 @@ from app.routes import router
 from market_core.logging import configure_logging
 from app.middleware import RequestContextMiddleware
 from app.health import router as health_router
+from prometheus_client import make_asgi_app
 
 
 # Configure logging before the application starts producing logs.
@@ -53,6 +54,10 @@ app = FastAPI(
 )
 
 app.add_middleware(RequestContextMiddleware)
+
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
+
 app.include_router(health_router)
 app.include_router(router)
 
