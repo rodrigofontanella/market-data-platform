@@ -22,7 +22,7 @@ PRODUCER_PUBLISH_FAILURES_TOTAL = Counter(
 )
 
 
-PRODUCER_PUBLISH_DURATION_SECONDS = Histogram(
-    "producer_publish_duration_seconds",
-    "Time spent publishing a trade event to Kafka",
+PRODUCER_ENQUEUE_DURATION_SECONDS = Histogram(
+    "producer_enqueue_duration_seconds",
+    "Time spent enqueueing a trade event in the Kafka producer",
 )

@@ -11,7 +11,7 @@ from market_core.logging import configure_logging
 from prometheus_client import start_http_server
 
 from app.metrics import (
-    PRODUCER_PUBLISH_DURATION_SECONDS,
+    PRODUCER_ENQUEUE_DURATION_SECONDS,
     PRODUCER_PUBLISH_FAILURES_TOTAL,
     TRADES_GENERATED_TOTAL,
     TRADES_PUBLISHED_TOTAL,
@@ -116,7 +116,7 @@ def run() -> None:
                     time.perf_counter() - publish_started_at
                 )
 
-                PRODUCER_PUBLISH_DURATION_SECONDS.observe(
+                PRODUCER_ENQUEUE_DURATION_SECONDS.observe(
                     publish_duration_seconds
                 )
 
