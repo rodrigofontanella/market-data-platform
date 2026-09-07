@@ -1,0 +1,18 @@
+# Development and test dependencies.
+#
+# Deliberately NOT installed into the production images -- docker/Dockerfile.python
+# copies only the per-app requirements.txt files.
+#
+# Setup, from the repository root:
+#
+#   python3 -m venv .venv
+#   .venv/bin/pip install -r requirements-dev.txt
+#   .venv/bin/pip install -e libs/market_core
+#   .venv/bin/pip install -r apps/consumer/requirements.txt
+#
+# The consumer's runtime requirements are needed even though these tests touch
+# neither Kafka nor PostgreSQL: app/consumer.py imports confluent_kafka at
+# module level, and app/database.py calls create_engine() at import time, which
+# eagerly imports the psycopg driver.
+
+pytest>=8.0
