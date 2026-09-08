@@ -45,3 +45,6 @@ dist/
 
 # Local database files
 *.sqlite3
+
+# Markdowns
+*.md

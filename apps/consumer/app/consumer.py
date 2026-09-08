@@ -4,7 +4,11 @@ from typing import Any
 
 from confluent_kafka import Consumer, KafkaError, KafkaException, Message
 from pydantic import ValidationError
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import (
+    InterfaceError,
+    OperationalError,
+    SQLAlchemyError,
+)
 
 from app.config import settings
 from app.database import SessionLocal, save_trade
@@ -73,6 +77,19 @@ class TradeStorageConsumer:
         except KafkaException:
             logger.exception(
                 "consumer_kafka_failed",
+                extra={
+                    "topic": settings.kafka_topic,
+                    "consumer_group": settings.kafka_group_id,
+                },
+            )
+            raise
+
+        # Deliberate crash, not an accident. Logged explicitly so an operator
+        # reading the logs can tell an intentional restart-to-retry apart from
+        # an unhandled bug.
+        except (OperationalError, InterfaceError):
+            logger.exception(
+                "consumer_restarting_after_database_outage",
                 extra={
                     "topic": settings.kafka_topic,
                     "consumer_group": settings.kafka_group_id,
@@ -185,13 +202,55 @@ class TradeStorageConsumer:
                 extra=kafka_context,
             )
 
-        except SQLAlchemyError:
+        # Transient: the database is unreachable, the message is fine.
+        #
+        # The offset is deliberately NOT committed and the exception is
+        # re-raised, which terminates the process. `run()`'s finally block
+        # leaves the consumer group cleanly, and Compose's
+        # `restart: unless-stopped` brings the container back. Because the
+        # offset never advanced, the restarted consumer resumes at exactly
+        # this message. The restart IS the retry.
+        #
+        # Redelivery is safe because save_trade() is idempotent on event_id
+        # (ON CONFLICT DO NOTHING), so a replay produces duplicates rather
+        # than duplicate rows.
+        except (OperationalError, InterfaceError):
             CONSUMER_FAILURES_TOTAL.labels(
-                failure_type="database",
-                    ).inc()
+                failure_type="database_transient",
+            ).inc()
 
             logger.exception(
-                "trade_database_failed",
+                "trade_database_unavailable",
+                extra=kafka_context,
+            )
+
+            raise
+
+        # Permanent: the database is fine, this row cannot be written.
+        # Retrying is pointless -- it would block the partition forever -- so
+        # the message is skipped and its offset committed explicitly.
+        #
+        # NOTE: this is a data-loss path. It is the same "skip it" policy
+        # already applied to malformed payloads above, and it is what the
+        # dead-letter topic is intended to replace. Until then, the counter
+        # and the log line are the only record that the trade existed.
+        except SQLAlchemyError:
+            CONSUMER_FAILURES_TOTAL.labels(
+                failure_type="database_permanent",
+            ).inc()
+
+            logger.exception(
+                "trade_write_rejected",
+                extra=kafka_context,
+            )
+
+            self.consumer.commit(
+                message=message,
+                asynchronous=False,
+            )
+
+            logger.warning(
+                "rejected_trade_offset_committed",
                 extra=kafka_context,
             )
 

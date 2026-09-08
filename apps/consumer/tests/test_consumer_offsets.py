@@ -6,20 +6,30 @@ the offset of the next message to deliver. That number only moves forward, and
 it covers a *range* -- so committing message N+1 implicitly acknowledges N,
 whatever happened to N.
 
-These tests pin down what the consumer does with that watermark when a message
-fails to persist.
+There is no way to express "everything up to 102 except 101". That is why a
+failed write cannot simply be skipped: the consumer must either stop, or
+deliberately decide the message is unprocessable and say so.
+
+Delivery semantics pinned down by these tests: AT-LEAST-ONCE. On a transient
+failure the consumer dies without committing, restarts, and reprocesses from
+the failed offset -- so messages already written are seen twice. That is safe
+only because save_trade() is idempotent on event_id.
 """
 
 from __future__ import annotations
+
+import pytest
+from sqlalchemy.exc import OperationalError
 
 import app.consumer
 
 from tests.conftest import (
     FakeKafkaConsumer,
     FakeSession,
-    make_database_error,
     make_event,
     make_message,
+    make_permanent_database_error,
+    make_transient_database_error,
 )
 
 
@@ -48,39 +58,80 @@ def _patch_consumer_dependencies(monkeypatch, save_trade) -> None:
 def test_healthy_run_commits_every_offset(monkeypatch):
     """Baseline: when every write succeeds, every offset is committed.
 
-    This test exists to prove the harness itself is wired correctly. Without
-    it, a red test below could be red because the fakes are broken rather than
-    because the consumer is.
+    This test exists to prove the harness itself is wired correctly, and to
+    catch a fix that accidentally breaks the normal path while repairing the
+    failure path. If this one goes red, the problem is not in error handling.
     """
     _patch_consumer_dependencies(monkeypatch, save_trade=lambda session, event: True)
 
     consumer = app.consumer.TradeStorageConsumer()
 
-    events = [make_event(), make_event(), make_event()]
     offsets = [FIRST_OFFSET, FAILING_OFFSET, LAST_OFFSET]
 
-    for offset, event in zip(offsets, events):
-        consumer._process_message(make_message(offset, event))
+    for offset in offsets:
+        consumer._process_message(make_message(offset, make_event()))
 
     assert consumer.consumer.committed_offsets == offsets
 
 
-def test_offset_watermark_does_not_advance_past_a_failed_message(monkeypatch):
-    """A message that failed to persist must not be acknowledged by a later one.
+def test_transient_failure_stops_the_consumer_without_advancing_the_watermark(
+    monkeypatch,
+):
+    """A database outage must halt the consumer, not skip the message.
 
-    Scenario: PostgreSQL is unavailable for exactly one message. The consumer
-    correctly declines to commit that message's offset -- but then processes
-    the next one successfully and commits *its* offset, dragging the watermark
-    past the failure.
+    The consumer cannot mark one message unprocessed while continuing past it,
+    because the offset is a watermark. So it declines to commit and re-raises,
+    terminating the process. The supervisor restarts it, and because the offset
+    never moved, it resumes at exactly this message.
 
-    Kafka then reports LAG 0. The trade is not stored, not retried, and not
-    recoverable without a manual consumer-group offset reset.
+    Before the fix, this exception was swallowed and the loop continued -- the
+    next successful message committed its own offset and dragged the watermark
+    past the failure. Kafka reported LAG 0 while the trade was missing.
     """
     failing_event = make_event(symbol="MSFT")
 
     def save_trade(session, event):
         if event.event_id == failing_event.event_id:
-            raise make_database_error()
+            raise make_transient_database_error()
+        return True
+
+    _patch_consumer_dependencies(monkeypatch, save_trade=save_trade)
+
+    consumer = app.consumer.TradeStorageConsumer()
+
+    consumer._process_message(make_message(FIRST_OFFSET, make_event(symbol="AAPL")))
+
+    # The consumer must refuse to continue rather than skip the message.
+    with pytest.raises(OperationalError):
+        consumer._process_message(make_message(FAILING_OFFSET, failing_event))
+
+    committed = consumer.consumer.committed_offsets
+
+    assert FAILING_OFFSET not in committed
+
+    highest_committed = max(committed, default=-1)
+
+    assert highest_committed < FAILING_OFFSET, (
+        f"Offset watermark advanced to {highest_committed}, past the failed "
+        f"message at offset {FAILING_OFFSET}. Kafka would consider that "
+        f"message processed: never redelivered, and lag reading 0 while the "
+        f"trade is missing from the database."
+    )
+
+
+def test_the_watermark_cannot_be_dragged_past_a_failed_message(monkeypatch):
+    """The regression guard for the original bug.
+
+    If someone later 'improves' the transient handler by swallowing the
+    exception so the consumer 'keeps working', processing continues to the
+    next message and its commit acknowledges the failure by implication.
+    This test fails the moment that happens.
+    """
+    failing_event = make_event(symbol="MSFT")
+
+    def save_trade(session, event):
+        if event.event_id == failing_event.event_id:
+            raise make_transient_database_error()
         return True
 
     _patch_consumer_dependencies(monkeypatch, save_trade=save_trade)
@@ -93,23 +144,46 @@ def test_offset_watermark_does_not_advance_past_a_failed_message(monkeypatch):
         make_message(LAST_OFFSET, make_event(symbol="NVDA")),
     ]
 
-    for message in messages:
-        consumer._process_message(message)
+    with pytest.raises(OperationalError):
+        for message in messages:
+            consumer._process_message(message)
 
-    committed = consumer.consumer.committed_offsets
-
-    # The failed message itself is correctly never committed. Asserting only
-    # this would pass against the current code and prove nothing.
-    assert FAILING_OFFSET not in committed
-
-    # The real invariant: no commit may move the watermark to or beyond the
-    # failed offset, because Kafka has no way to represent "everything up to
-    # 102 except 101".
-    highest_committed = max(committed, default=-1)
-
-    assert highest_committed < FAILING_OFFSET, (
-        f"Offset watermark advanced to {highest_committed}, past the failed "
-        f"message at offset {FAILING_OFFSET}. Kafka now considers that message "
-        f"processed: it will never be redelivered to this consumer group, and "
-        f"lag will read 0 while the trade is missing from the database."
+    assert consumer.consumer.committed_offsets == [FIRST_OFFSET], (
+        "The consumer processed a message after a transient failure. Whatever "
+        "it committed for that later message silently acknowledged the failed "
+        "one."
     )
+
+
+def test_permanent_failure_skips_the_message_and_commits_its_offset(monkeypatch):
+    """A row the database will never accept must not block the partition.
+
+    Retrying a DataError forever stalls the consumer group on one message. So
+    this class is skipped deliberately and its offset committed, exactly as
+    malformed payloads already are.
+
+    This is a data-loss path, documented rather than hidden -- it is what the
+    dead-letter topic is meant to replace. When the DLQ lands, this test should
+    change to assert the message was published there before being committed.
+    """
+    poison_event = make_event(symbol="MSFT")
+
+    def save_trade(session, event):
+        if event.event_id == poison_event.event_id:
+            raise make_permanent_database_error()
+        return True
+
+    _patch_consumer_dependencies(monkeypatch, save_trade=save_trade)
+
+    consumer = app.consumer.TradeStorageConsumer()
+
+    # Must NOT raise: a permanent failure is not a reason to stop the world.
+    consumer._process_message(make_message(FIRST_OFFSET, make_event(symbol="AAPL")))
+    consumer._process_message(make_message(FAILING_OFFSET, poison_event))
+    consumer._process_message(make_message(LAST_OFFSET, make_event(symbol="NVDA")))
+
+    assert consumer.consumer.committed_offsets == [
+        FIRST_OFFSET,
+        FAILING_OFFSET,
+        LAST_OFFSET,
+    ]

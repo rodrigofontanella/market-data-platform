@@ -11,7 +11,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import DataError, OperationalError
 
 from market_core import TradeEvent
 
@@ -119,14 +119,28 @@ class FakeSession:
         self.rolled_back = True
 
 
-def make_database_error(message: str = "connection refused") -> OperationalError:
-    """Build a realistic transient database failure.
+def make_transient_database_error(
+    message: str = "connection refused",
+) -> OperationalError:
+    """A database that went away. The message is fine; retrying will work.
 
     SQLAlchemy's DBAPIError subclasses take (statement, params, orig).
-    OperationalError is what you actually get when PostgreSQL goes away --
-    which is the failure we reproduced by stopping the postgres container.
+    OperationalError is what you actually get when PostgreSQL stops --
+    the failure we reproduced by stopping the postgres container.
     """
     return OperationalError("INSERT INTO trades ...", {}, Exception(message))
+
+
+def make_permanent_database_error(
+    message: str = "numeric field overflow",
+) -> DataError:
+    """A row the database will never accept, however many times we try.
+
+    DataError is the realistic case here: a price that does not fit
+    NUMERIC(18,6). Retrying blocks the partition forever, so this class of
+    failure must be skipped rather than retried.
+    """
+    return DataError("INSERT INTO trades ...", {}, Exception(message))
 
 
 # ---------------------------------------------------------------------------
