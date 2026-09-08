@@ -1,0 +1,143 @@
+# Alerting rules for the market data platform.
+#
+# These encode the state table from docs/market data.md section 33 -- the
+# distinction between healthy, recovering, consumer failure, capacity problem
+# and monitoring failure -- plus the blind spot found on 2026-09-08: the
+# consumer can drop trades while Kafka reports LAG 0, because a committed
+# offset is a watermark and says nothing about whether the work was done.
+#
+# Prometheus evaluates these and exposes their state at /alerts. Actually
+# routing a firing alert anywhere (email, Slack, phone) requires Alertmanager,
+# which is not deployed yet -- these are visible, not delivered.
+#
+# Validate before restarting Prometheus:
+#   docker run --rm -v "$PWD/docker/prometheus/rules:/rules" \
+#     --entrypoint promtool prom/prometheus:latest check rules /rules/market-data.rules.yml
+
+groups:
+  - name: market-data-pipeline
+    interval: 30s
+    rules:
+
+      # ------------------------------------------------------------------
+      # Data loss. The alert that would have caught the offset-watermark bug.
+      # ------------------------------------------------------------------
+
+      # A permanent write failure means the consumer committed the offset and
+      # moved on -- the trade is not stored, not retried, and not redeliverable.
+      # Kafka reports LAG 0 throughout. Nothing else in the stack notices.
+      #
+      # This series does not exist until the first such failure occurs, so an
+      # absent result means "never happened", not "consumer is fine". The
+      # liveness alerts below cover that case.
+      - alert: TradesSilentlyDropped
+        expr: increase(consumer_failures_total{failure_type="database_permanent"}[10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Consumer permanently dropped a trade it could not write"
+          description: >-
+            consumer_failures_total{failure_type="database_permanent"} increased.
+            The row was rejected by PostgreSQL, the offset was committed to avoid
+            blocking the partition, and the trade is gone. Kafka lag will read 0.
+            This is the loss path a dead-letter topic is intended to replace.
+
+      # ------------------------------------------------------------------
+      # Consumer liveness. Under let-it-crash, a transient database failure
+      # kills the process on purpose -- so a brief gap is expected behaviour
+      # and only a sustained one is an incident.
+      # ------------------------------------------------------------------
+
+      - alert: ConsumerDown
+        expr: up{job="market-data-consumer"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Consumer has not been scrapeable for 2 minutes"
+          description: >-
+            Either the container is stopped, or it is crash-looping faster than
+            it can serve /metrics. A transient database error terminates the
+            process by design; if PostgreSQL is down, expect this to fire and
+            resolve itself when the database returns.
+
+      # Prometheus counters live in process memory, so a counter reset IS a
+      # process restart. This is the signal that distinguishes "restarted once"
+      # from "restarting continuously".
+      #
+      # Note the limitation: if the consumer is down hard, the series goes
+      # absent and resets() has nothing to measure. This catches flapping;
+      # ConsumerDown catches death.
+      - alert: ConsumerCrashLooping
+        expr: resets(trades_consumed_total[15m]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Consumer restarted more than 3 times in 15 minutes"
+          description: >-
+            Repeated counter resets mean the process is being replaced
+            repeatedly. Expected during a database outage; sustained beyond it
+            suggests a message the consumer cannot get past, or a dependency
+            that never recovers.
+
+      - alert: ConsumerAbsentFromGroup
+        expr: kafka_consumergroup_members{consumergroup="market-trades-storage-v1"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No members in consumer group market-trades-storage-v1"
+          description: >-
+            Kafka has no live consumer for this group. Messages accumulate in
+            the topic and nothing is persisted. This is Kafka's own view, taken
+            via kafka-exporter, and so it survives the consumer being dead.
+
+      # ------------------------------------------------------------------
+      # Capacity. A live consumer whose backlog keeps growing is a different
+      # problem from a dead one: it is running, just not fast enough.
+      # ------------------------------------------------------------------
+
+      - alert: ConsumerLagGrowing
+        expr: |
+          delta(kafka_consumergroup_lag_sum{consumergroup="market-trades-storage-v1"}[10m]) > 0
+          and on(consumergroup)
+          kafka_consumergroup_members{consumergroup="market-trades-storage-v1"} > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Consumer is alive but falling behind"
+          description: >-
+            Lag has increased over 10 minutes with a live group member. Lag
+            alone is not a fault -- a recovering consumer shows high but
+            shrinking lag. Growing lag with a live member is a capacity problem.
+
+      # ------------------------------------------------------------------
+      # Monitoring integrity. An alert that cannot fire is worse than no alert,
+      # so the monitoring path needs its own alert.
+      # ------------------------------------------------------------------
+
+      - alert: KafkaExporterDown
+        expr: up{job="kafka-exporter"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "kafka-exporter is not scrapeable"
+          description: >-
+            Every Kafka-native signal above -- lag, group membership -- comes
+            through this exporter. While it is down those alerts cannot fire,
+            and their silence means nothing.
+
+      - alert: ScrapeTargetDown
+        expr: up{job!~"market-data-consumer|kafka-exporter"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus target {{ $labels.job }} is down"
+          description: >-
+            Prometheus cannot scrape {{ $labels.instance }}. Metrics from this
+            target are missing, so any alert depending on them is silent.

@@ -1,0 +1,144 @@
+# Unit tests for the alerting rules.
+#
+# Alerting rules are code, and untested alerting rules fail in the one way that
+# matters: silently, during the incident they were written for. These feed
+# synthetic series to the rules and assert which alerts fire.
+#
+# Run:
+#   docker run --rm -v "$PWD/docker/prometheus/rules:/rules" \
+#     --entrypoint promtool prom/prometheus:latest \
+#     test rules /rules/market-data.rules.test.yml
+
+rule_files:
+  - market-data.rules.yml
+
+evaluation_interval: 30s
+
+tests:
+
+  # A single permanent write failure must fire immediately. This is the
+  # scenario where Kafka reports LAG 0 and nothing else notices.
+  - interval: 30s
+    name: permanent database failure raises TradesSilentlyDropped
+    input_series:
+      - series: 'consumer_failures_total{failure_type="database_permanent",job="market-data-consumer",instance="consumer:9101"}'
+        values: '0+0x10 1+0x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: TradesSilentlyDropped
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              failure_type: database_permanent
+              job: market-data-consumer
+              instance: consumer:9101
+            exp_annotations:
+              summary: "Consumer permanently dropped a trade it could not write"
+              description: >-
+                consumer_failures_total{failure_type="database_permanent"} increased. The row was rejected by PostgreSQL, the offset was committed to avoid blocking the partition, and the trade is gone. Kafka lag will read 0. This is the loss path a dead-letter topic is intended to replace.
+
+  # A consumer that never fails must not raise it. An alert that fires when
+  # nothing is wrong gets muted, and a muted alert is not an alert.
+  - interval: 30s
+    name: healthy consumer raises nothing
+    input_series:
+      - series: 'consumer_failures_total{failure_type="database_permanent",job="market-data-consumer",instance="consumer:9101"}'
+        values: '0+0x40'
+      - series: 'up{job="market-data-consumer",instance="consumer:9101"}'
+        values: '1+0x40'
+      - series: 'up{job="kafka-exporter",instance="kafka-exporter:9308"}'
+        values: '1+0x40'
+      - series: 'kafka_consumergroup_members{consumergroup="market-trades-storage-v1"}'
+        values: '1+0x40'
+      - series: 'kafka_consumergroup_lag_sum{consumergroup="market-trades-storage-v1",topic="market.trades.raw"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: TradesSilentlyDropped
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ConsumerDown
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ConsumerAbsentFromGroup
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ConsumerLagGrowing
+        exp_alerts: []
+
+  # Growing lag with a live member is a capacity problem, and exercises the
+  # `and on(consumergroup)` join between two metrics with different label sets.
+  - interval: 30s
+    name: growing lag with a live member raises ConsumerLagGrowing
+    input_series:
+      - series: 'kafka_consumergroup_lag_sum{consumergroup="market-trades-storage-v1",topic="market.trades.raw"}'
+        values: '0+50x60'
+      - series: 'kafka_consumergroup_members{consumergroup="market-trades-storage-v1"}'
+        values: '1+0x60'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: ConsumerLagGrowing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              consumergroup: market-trades-storage-v1
+              topic: market.trades.raw
+            exp_annotations:
+              summary: "Consumer is alive but falling behind"
+              description: >-
+                Lag has increased over 10 minutes with a live group member. Lag alone is not a fault -- a recovering consumer shows high but shrinking lag. Growing lag with a live member is a capacity problem.
+
+  # Shrinking lag is a consumer catching up, not a fault. This is the
+  # distinction docs/market data.md section 31 identifies as the important one.
+  - interval: 30s
+    name: shrinking lag is recovery and must not alert
+    input_series:
+      - series: 'kafka_consumergroup_lag_sum{consumergroup="market-trades-storage-v1",topic="market.trades.raw"}'
+        values: '5000-100x50'
+      - series: 'kafka_consumergroup_members{consumergroup="market-trades-storage-v1"}'
+        values: '1+0x50'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: ConsumerLagGrowing
+        exp_alerts: []
+
+  # A dead consumer group. Kafka's own view, so it survives the consumer being
+  # gone entirely -- which application metrics do not.
+  - interval: 30s
+    name: empty consumer group raises ConsumerAbsentFromGroup
+    input_series:
+      - series: 'kafka_consumergroup_members{consumergroup="market-trades-storage-v1"}'
+        values: '1+0x5 0+0x40'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: ConsumerAbsentFromGroup
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              consumergroup: market-trades-storage-v1
+            exp_annotations:
+              summary: "No members in consumer group market-trades-storage-v1"
+              description: >-
+                Kafka has no live consumer for this group. Messages accumulate in the topic and nothing is persisted. This is Kafka's own view, taken via kafka-exporter, and so it survives the consumer being dead.
+
+  # Repeated counter resets mean the process is being replaced repeatedly.
+  # Under let-it-crash this is the signal that separates a normal restart from
+  # a crash loop.
+  - interval: 30s
+    name: repeated counter resets raise ConsumerCrashLooping
+    input_series:
+      - series: 'trades_consumed_total{topic="market.trades.raw",job="market-data-consumer",instance="consumer:9101"}'
+        values: '1 2 3 0 1 2 0 1 2 0 1 2 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ConsumerCrashLooping
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              topic: market.trades.raw
+              job: market-data-consumer
+              instance: consumer:9101
+            exp_annotations:
+              summary: "Consumer restarted more than 3 times in 15 minutes"
+              description: >-
+                Repeated counter resets mean the process is being replaced repeatedly. Expected during a database outage; sustained beyond it suggests a message the consumer cannot get past, or a dependency that never recovers.
