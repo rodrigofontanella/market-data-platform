@@ -3,7 +3,7 @@
 # These encode the state table from docs/market data.md section 33 -- the
 # distinction between healthy, recovering, consumer failure, capacity problem
 # and monitoring failure -- plus the blind spot found on 2026-09-08: the
-# consumer can drop trades while Kafka reports LAG 0, because a committed
+# consumer could drop trades while Kafka reported LAG 0, because a committed
 # offset is a watermark and says nothing about whether the work was done.
 #
 # Prometheus evaluates these and exposes their state at /alerts. Actually
@@ -20,28 +20,49 @@ groups:
     rules:
 
       # ------------------------------------------------------------------
-      # Data loss. The alert that would have caught the offset-watermark bug.
+      # Dead-letter path. Since the DLQ landed, an unprocessable message is
+      # parked rather than lost -- so this is triage work, not an outage.
       # ------------------------------------------------------------------
 
-      # A permanent write failure means the consumer committed the offset and
-      # moved on -- the trade is not stored, not retried, and not redeliverable.
-      # Kafka reports LAG 0 throughout. Nothing else in the stack notices.
+      # Covers BOTH loss paths in one rule: malformed payloads
+      # (reason="invalid_payload") and rows PostgreSQL rejects
+      # (reason="database_rejected"). A separate alert on
+      # consumer_failures_total{failure_type="database_permanent"} would now be
+      # redundant -- every permanent failure is dead-lettered.
       #
-      # This series does not exist until the first such failure occurs, so an
-      # absent result means "never happened", not "consumer is fine". The
-      # liveness alerts below cover that case.
-      - alert: TradesSilentlyDropped
-        expr: increase(consumer_failures_total{failure_type="database_permanent"}[10m]) > 0
+      # Deliberately warning, not critical. The pipeline handled this correctly
+      # and nothing was lost. An alert that claims data loss when the system
+      # worked is how alerts get muted.
+      - alert: TradesDeadLettered
+        expr: increase(trades_dead_lettered_total[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Message dead-lettered ({{ $labels.reason }}) -- needs triage"
+          description: >-
+            The consumer could not process a message and published it to
+            market.trades.dlq before committing the offset. The message is safe
+            and the pipeline is healthy; someone has to look at why it failed.
+            Inspect with kafka-console-consumer against the DLQ topic, reading
+            the x-error-type and x-original-offset headers.
+
+      # THIS is the data-loss signal now. A failed DLQ write means the consumer
+      # had nowhere left to put a message and crashed rather than dropping it,
+      # so the pipeline is stopped and the message is still in the source topic.
+      - alert: DeadLetterWriteFailing
+        expr: increase(dead_letter_failures_total[10m]) > 0
         for: 0m
         labels:
           severity: critical
         annotations:
-          summary: "Consumer permanently dropped a trade it could not write"
+          summary: "Consumer cannot write to the dead-letter topic"
           description: >-
-            consumer_failures_total{failure_type="database_permanent"} increased.
-            The row was rejected by PostgreSQL, the offset was committed to avoid
-            blocking the partition, and the trade is gone. Kafka lag will read 0.
-            This is the loss path a dead-letter topic is intended to replace.
+            The dead-letter publish could not be confirmed, so the consumer
+            re-raised rather than committing an offset for a message it had
+            nowhere to park. Processing is stopped and will crash-loop until
+            the DLQ topic is writable. Check the topic exists and the broker is
+            reachable.
 
       # ------------------------------------------------------------------
       # Consumer liveness. Under let-it-crash, a transient database failure

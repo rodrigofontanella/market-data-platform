@@ -16,27 +16,100 @@ evaluation_interval: 30s
 
 tests:
 
-  # A single permanent write failure must fire immediately. This is the
-  # scenario where Kafka reports LAG 0 and nothing else notices.
+  # A dead-lettered message is triage work, not an outage. The message is safe
+  # in the DLQ -- warning, not critical.
   - interval: 30s
-    name: permanent database failure raises TradesSilentlyDropped
+    name: a dead-lettered message raises TradesDeadLettered
     input_series:
-      - series: 'consumer_failures_total{failure_type="database_permanent",job="market-data-consumer",instance="consumer:9101"}'
+      - series: 'trades_dead_lettered_total{reason="invalid_payload",job="market-data-consumer",instance="consumer:9101"}'
         values: '0+0x10 1+0x20'
     alert_rule_test:
       - eval_time: 10m
-        alertname: TradesSilentlyDropped
+        alertname: TradesDeadLettered
         exp_alerts:
           - exp_labels:
-              severity: critical
-              failure_type: database_permanent
+              severity: warning
+              reason: invalid_payload
               job: market-data-consumer
               instance: consumer:9101
             exp_annotations:
-              summary: "Consumer permanently dropped a trade it could not write"
+              summary: "Message dead-lettered (invalid_payload) -- needs triage"
               description: >-
-                consumer_failures_total{failure_type="database_permanent"} increased. The row was rejected by PostgreSQL, the offset was committed to avoid blocking the partition, and the trade is gone. Kafka lag will read 0. This is the loss path a dead-letter topic is intended to replace.
+                The consumer could not process a message and published it to market.trades.dlq before committing the offset. The message is safe and the pipeline is healthy; someone has to look at why it failed. Inspect with kafka-console-consumer against the DLQ topic, reading the x-error-type and x-original-offset headers.
 
+  # A row PostgreSQL rejected takes the same path, distinguished only by label.
+  - interval: 30s
+    name: a database-rejected row raises TradesDeadLettered
+    input_series:
+      - series: 'trades_dead_lettered_total{reason="database_rejected",job="market-data-consumer",instance="consumer:9101"}'
+        values: '0+0x10 1+0x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: TradesDeadLettered
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              reason: database_rejected
+              job: market-data-consumer
+              instance: consumer:9101
+            exp_annotations:
+              summary: "Message dead-lettered (database_rejected) -- needs triage"
+              description: >-
+                The consumer could not process a message and published it to market.trades.dlq before committing the offset. The message is safe and the pipeline is healthy; someone has to look at why it failed. Inspect with kafka-console-consumer against the DLQ topic, reading the x-error-type and x-original-offset headers.
+
+  # THE data-loss signal. A failed DLQ write means the consumer had nowhere to
+  # park a message and stopped rather than dropping it.
+  - interval: 30s
+    name: a failed dead-letter write raises DeadLetterWriteFailing
+    input_series:
+      - series: 'dead_letter_failures_total{job="market-data-consumer",instance="consumer:9101"}'
+        values: '0+0x10 1+0x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: DeadLetterWriteFailing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: market-data-consumer
+              instance: consumer:9101
+            exp_annotations:
+              summary: "Consumer cannot write to the dead-letter topic"
+              description: >-
+                The dead-letter publish could not be confirmed, so the consumer re-raised rather than committing an offset for a message it had nowhere to park. Processing is stopped and will crash-loop until the DLQ topic is writable. Check the topic exists and the broker is reachable.
+
+  # A healthy pipeline must raise nothing. An alert that fires when nothing is
+  # wrong gets muted, and a muted alert is not an alert.
+  - interval: 30s
+    name: healthy pipeline raises nothing
+    input_series:
+      - series: 'trades_dead_lettered_total{reason="invalid_payload",job="market-data-consumer",instance="consumer:9101"}'
+        values: '0+0x40'
+      - series: 'dead_letter_failures_total{job="market-data-consumer",instance="consumer:9101"}'
+        values: '0+0x40'
+      - series: 'up{job="market-data-consumer",instance="consumer:9101"}'
+        values: '1+0x40'
+      - series: 'up{job="kafka-exporter",instance="kafka-exporter:9308"}'
+        values: '1+0x40'
+      - series: 'kafka_consumergroup_members{consumergroup="market-trades-storage-v1"}'
+        values: '1+0x40'
+      - series: 'kafka_consumergroup_lag_sum{consumergroup="market-trades-storage-v1",topic="market.trades.raw"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: TradesDeadLettered
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: DeadLetterWriteFailing
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ConsumerDown
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ConsumerAbsentFromGroup
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ConsumerLagGrowing
+        exp_alerts: []
   # A consumer that never fails must not raise it. An alert that fires when
   # nothing is wrong gets muted, and a muted alert is not an alert.
   - interval: 30s

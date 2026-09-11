@@ -39,3 +39,18 @@ CONSUMER_PROCESSING_DURATION_SECONDS = Histogram(
     "consumer_processing_duration_seconds",
     "Time spent processing a Kafka message",
 )
+
+
+TRADES_DEAD_LETTERED_TOTAL = Counter(
+    "trades_dead_lettered_total",
+    "Total number of messages published to the dead-letter topic",
+    labelnames=["reason"],
+)
+
+
+DEAD_LETTER_FAILURES_TOTAL = Counter(
+    "dead_letter_failures_total",
+    "Total number of failures publishing to the dead-letter topic. "
+    "Non-zero means messages could not be parked and the consumer crashed "
+    "rather than dropping them.",
+)

@@ -24,6 +24,7 @@ from sqlalchemy.exc import OperationalError
 import app.consumer
 
 from tests.conftest import (
+    FakeDeadLetterProducer,
     FakeKafkaConsumer,
     FakeSession,
     make_event,
@@ -53,6 +54,7 @@ def _patch_consumer_dependencies(monkeypatch, save_trade) -> None:
     monkeypatch.setattr(app.consumer, "Consumer", FakeKafkaConsumer)
     monkeypatch.setattr(app.consumer, "SessionLocal", lambda: FakeSession())
     monkeypatch.setattr(app.consumer, "save_trade", save_trade)
+    monkeypatch.setattr(app.consumer, "DeadLetterProducer", lambda **kwargs: FakeDeadLetterProducer(event_log=[]),)
 
 
 def test_healthy_run_commits_every_offset(monkeypatch):
