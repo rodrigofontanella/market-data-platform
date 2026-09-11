@@ -2,6 +2,17 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# Alerting rules are evaluated every evaluation_interval and their state is
+# visible at http://localhost:9090/alerts. Routing a firing alert to a human
+# needs Alertmanager, which is not deployed yet.
+#
+# The glob is deliberately *.rules.yml, not *.yml. The promtool unit tests live
+# beside the rules they test as *.rules.test.yml, and they are NOT rule files --
+# they contain `tests:` and `rule_files:` keys that rulefmt rejects. A broader
+# glob makes Prometheus fail to start with a config error.
+rule_files:
+  - /etc/prometheus/rules/*.rules.yml
+
 scrape_configs:
   - job_name: "market-data-api"
     metrics_path: /metrics/
