@@ -12,6 +12,7 @@ from sqlalchemy.exc import (
 
 from app.config import settings
 from app.database import SessionLocal, save_trade
+from app.dlq import DeadLetterProducer, DeadLetterPublishError
 from market_core import TradeEvent
 
 import time
@@ -19,9 +20,11 @@ import time
 from app.metrics import (
     CONSUMER_FAILURES_TOTAL,
     CONSUMER_PROCESSING_DURATION_SECONDS,
+    DEAD_LETTER_FAILURES_TOTAL,
     DUPLICATE_TRADES_TOTAL,
     INVALID_EVENTS_TOTAL,
     TRADES_CONSUMED_TOTAL,
+    TRADES_DEAD_LETTERED_TOTAL,
     TRADES_STORED_TOTAL,
 )
 
@@ -41,7 +44,15 @@ class TradeStorageConsumer:
                 "heartbeat.interval.ms": 15_000,
                 "max.poll.interval.ms": 300_000,
                 "socket.timeout.ms": 60_000,
+                "client.id": "market-data-consumer",
             }
+        )
+
+        # This service is now a producer as well as a consumer.
+        self.dead_letters = DeadLetterProducer(
+            bootstrap_servers=settings.kafka_bootstrap_servers,
+            topic=settings.kafka_dlq_topic,
+            flush_timeout_seconds=settings.dlq_flush_timeout_seconds,
         )
 
     def run(self) -> None:
@@ -101,6 +112,52 @@ class TradeStorageConsumer:
             logger.info("consumer_stopping")
             self.consumer.close()
             logger.info("consumer_stopped")
+
+
+    def _dead_letter(
+        self,
+        message: Message,
+        error: Exception,
+        reason: str,
+        kafka_context: dict[str, Any],
+    ) -> None:
+        """Park an unprocessable message, or refuse to continue.
+
+        Returns normally only once the DLQ write is CONFIRMED. The caller may
+        commit the source offset after that and not before -- an enqueued but
+        unflushed message exists only in this process's memory.
+        """
+        try:
+            self.dead_letters.publish(
+                message=message,
+                error=error,
+                reason=reason,
+                consumer_group=settings.kafka_group_id,
+            )
+
+        except DeadLetterPublishError:
+            DEAD_LETTER_FAILURES_TOTAL.inc()
+
+            logger.exception(
+                "dead_letter_publish_failed",
+                extra={**kafka_context, "reason": reason},
+            )
+
+            raise
+
+        TRADES_DEAD_LETTERED_TOTAL.labels(
+            reason=reason,
+        ).inc()
+
+        logger.warning(
+            "trade_dead_lettered",
+            extra={
+                **kafka_context,
+                "reason": reason,
+                "dlq_topic": settings.kafka_dlq_topic,
+                "error_type": type(error).__name__,
+            },
+        )
 
     def _process_message(self, message: Message) -> None:
         started_at = time.perf_counter()
@@ -173,6 +230,12 @@ class TradeStorageConsumer:
                 },
             )
 
+
+            # The payload is not a trade event and never will be. Park it, then
+            # skip it. _dead_letter() raises rather than returning if the DLQ write
+            # cannot be confirmed, so the commit below is unreachable in that case.
+
+
         except (
             json.JSONDecodeError,
             UnicodeDecodeError,
@@ -192,6 +255,13 @@ class TradeStorageConsumer:
             )
 
             # Temporary policy: malformed records are skipped.
+            self._dead_letter(
+                message=message,
+                error=error,
+                reason="invalid_payload",
+                kafka_context=kafka_context,
+            )
+
             self.consumer.commit(
                 message=message,
                 asynchronous=False,
@@ -234,7 +304,7 @@ class TradeStorageConsumer:
         # already applied to malformed payloads above, and it is what the
         # dead-letter topic is intended to replace. Until then, the counter
         # and the log line are the only record that the trade existed.
-        except SQLAlchemyError:
+        except SQLAlchemyError as error:
             CONSUMER_FAILURES_TOTAL.labels(
                 failure_type="database_permanent",
             ).inc()
@@ -242,6 +312,13 @@ class TradeStorageConsumer:
             logger.exception(
                 "trade_write_rejected",
                 extra=kafka_context,
+            )
+
+            self._dead_letter(
+                message=message,
+                error=error,
+                reason="database_rejected",
+                kafka_context=kafka_context,
             )
 
             self.consumer.commit(
