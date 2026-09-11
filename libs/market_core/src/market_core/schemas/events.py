@@ -18,7 +18,7 @@ class TradeEvent(BaseModel):
         min_length=1,
         max_length=20,
     )
-    price: Decimal = Field(gt=0)
+    price: Decimal = Field(gt=0, max_digits=18, decimal_places=6,)
     volume: int = Field(gt=0)
     timestamp: datetime
 

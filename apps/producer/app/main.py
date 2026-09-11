@@ -2,6 +2,7 @@ import logging
 import random
 import time
 from datetime import UTC, datetime
+from decimal import ROUND_HALF_UP, Decimal
 
 from app.config import settings
 from app.producer import MarketDataProducer
@@ -26,6 +27,7 @@ configure_logging(
 
 logger = logging.getLogger(__name__)
 
+PRICE_EXPONENT = Decimal("0.01")
 
 BASE_PRICES = {
     "AAPL": 215.00,
@@ -35,12 +37,17 @@ BASE_PRICES = {
 
 
 def generate_trade(symbol: str) -> TradeEvent:
-    base_price = BASE_PRICES[symbol]
-    price_change = random.uniform(-1.0, 1.0)
+    base_price = Decimal(BASE_PRICES[symbol])
+    price_change = Decimal(str(random.uniform(-1.0, 1.0)))
+    price = (base_price + price_change).quantize(
+        PRICE_EXPONENT,
+        rounding=ROUND_HALF_UP,
+    )
+
 
     return TradeEvent(
         symbol=symbol,
-        price=round(base_price + price_change, 2),
+        price=price,
         volume=random.randint(1, 1_000),
         timestamp=datetime.now(UTC),
         source="simulator",
