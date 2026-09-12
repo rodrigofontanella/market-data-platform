@@ -21,10 +21,8 @@ class MigrationSettings(DatabaseSettings):
 
 settings = MigrationSettings()
 
-config.set_main_option(
-    "sqlalchemy.url",
-    settings.database_url,
-)
+if not config.get_main_option("sqlalchemy.url", None):
+    config.set_main_option("sqlalchemy.url", settings.database_url)
 
 target_metadata = Base.metadata
 

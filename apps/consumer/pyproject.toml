@@ -1,5 +1,6 @@
 [tool.pytest.ini_options]
-# All three services expose a package literally named `app`, so they cannot
-# share one pytest process. Each service is rooted in its own directory.
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "integration: requires a real PostgreSQL via testcontainers (slow)",
+]
