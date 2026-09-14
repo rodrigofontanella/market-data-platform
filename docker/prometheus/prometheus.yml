@@ -22,9 +22,10 @@ scrape_configs:
 
   - job_name: "market-data-consumer"
     metrics_path: /metrics
-    static_configs:
-      - targets:
-          - "consumer:9101"
+    dns_sd_configs:
+      - names: ["consumer"]
+        type: A
+        port: 9101
 
   - job_name: "market-data-producer"
     metrics_path: /metrics

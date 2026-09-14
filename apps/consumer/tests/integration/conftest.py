@@ -18,8 +18,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
-from testcontainers.postgres import PostgresContainer
-
+from testcontainers.community.postgres import PostgresContainer
 
 # Pinned to the tag in docker/compose.postgres.yml. If those drift, these
 # tests stop being evidence about the database you actually run.
