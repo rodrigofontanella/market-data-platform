@@ -5,6 +5,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
 
+from typing import Annotated
+
+from fastapi import Depends
+
 
 engine = create_engine(
     settings.database_url,
@@ -25,3 +29,6 @@ def get_session() -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
+
+
+DatabaseSession = Annotated[Session, Depends(get_session)]

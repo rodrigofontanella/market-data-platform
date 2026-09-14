@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.database import SessionLocal
+from app.database import DatabaseSession
 
 
 logger = logging.getLogger(__name__)
@@ -53,12 +53,11 @@ def liveness() -> LivenessResponse:
         }
     },
 )
-def readiness(response: Response) -> ReadinessResponse:
+def readiness(response: Response, session: DatabaseSession) -> ReadinessResponse:
     started_at = time.perf_counter()
 
     try:
-        with SessionLocal() as session:
-            session.execute(text("SELECT 1"))
+        session.execute(text("SELECT 1"))
 
     except SQLAlchemyError:
         latency_ms = round(

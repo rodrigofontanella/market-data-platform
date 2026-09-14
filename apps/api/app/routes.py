@@ -9,9 +9,9 @@ from app.database import get_session
 from market_core import Trade, TradeResponse
 from app.schemas import HealthResponse, SymbolResponse
 
-router = APIRouter()
+from app.database import DatabaseSession
 
-DatabaseSession = Annotated[Session, Depends(get_session)]
+router = APIRouter()
 
 
 @router.get(
@@ -100,7 +100,7 @@ def list_trades_by_symbol(
     statement = (
         select(Trade)
         .where(Trade.symbol == normalized_symbol)
-        .order_by(Trade.event_time.desc())
+        .order_by(Trade.event_time.desc(), Trade.id.desc())
         .limit(limit)
     )
 
