@@ -10,15 +10,32 @@
 #   .venv/bin/pip install -e libs/market_core
 #   .venv/bin/pip install -r apps/consumer/requirements.txt
 #
-# The consumer's runtime requirements are needed even though these tests touch
-# neither Kafka nor PostgreSQL: app/consumer.py imports confluent_kafka at
+# The consumer's runtime requirements are needed even though the unit tests
+# touch neither Kafka nor PostgreSQL: app/consumer.py imports confluent_kafka at
 # module level, and app/database.py calls create_engine() at import time, which
 # eagerly imports the psycopg driver.
+#
+# Everything here is pinned to an exact version. These are the versions the test
+# suite has actually been run against; a floating range means a green suite today
+# and an unexplained failure tomorrow, from a dependency nobody changed on
+# purpose. Upgrade deliberately: bump the pin, run ./scripts/check.sh --all,
+# commit the pin and the result together.
+#
+# This is not a lockfile. It pins what we import plus the transitive packages
+# that materially affect behaviour (SQLAlchemy, docker); the rest of the
+# dependency tree still floats. If that becomes a problem, the answer is
+# pip-tools or uv, not more lines here.
 
-pytest>=8.0
+pytest==9.1.1
+
+# Integration tests (apps/consumer/tests/integration) only. These need a
+# reachable Docker daemon -- testcontainers starts a real postgres:16 per test
+# session. They are excluded by default; ./scripts/check.sh --all includes them.
+#
+# psycopg carries the [binary] extra on purpose: the pure-Python package needs
+# libpq and a compiler at install time, which the binary wheel avoids.
 alembic==1.20.0
 docker==7.2.0
-psycopg==3.3.5
+psycopg[binary]==3.3.5
 SQLAlchemy==2.0.52
 testcontainers==4.15.0
-
