@@ -2,8 +2,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 from market_core import Trade, TradeResponse
-from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import DatabaseSession
 from app.queries import (
@@ -13,30 +11,9 @@ from app.queries import (
     select_trades,
     select_trades_by_symbol,
 )
-from app.schemas import HealthResponse, SymbolResponse
+from app.schemas import SymbolResponse
 
 router = APIRouter()
-
-
-@router.get(
-    "/health",
-    response_model=HealthResponse,
-    tags=["health"],
-)
-def health_check(session: DatabaseSession) -> HealthResponse:
-    try:
-        session.execute(text("SELECT 1"))
-
-        return HealthResponse(
-            status="healthy",
-            database="connected",
-        )
-
-    except SQLAlchemyError as error:
-        raise HTTPException(
-            status_code=503,
-            detail="Database connection failed",
-        ) from error
 
 
 @router.get(
