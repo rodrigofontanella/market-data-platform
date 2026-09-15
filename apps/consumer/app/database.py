@@ -1,6 +1,5 @@
 import logging
 from collections.abc import Generator
-from decimal import Decimal
 
 from market_core import Trade, TradeEvent
 from sqlalchemy import create_engine

@@ -13,7 +13,6 @@ from app.metrics import (
     PRODUCER_ENQUEUE_DURATION_SECONDS,
     PRODUCER_PUBLISH_FAILURES_TOTAL,
     TRADES_GENERATED_TOTAL,
-    TRADES_PUBLISHED_TOTAL,
 )
 from app.producer import MarketDataProducer
 
