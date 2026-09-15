@@ -11,9 +11,8 @@ routes.py executes statements and never builds one.
 
 from __future__ import annotations
 
-from sqlalchemy import Select, distinct, select
-
 from market_core import Trade
+from sqlalchemy import Select, distinct, select
 
 
 def normalize_symbol(symbol: str) -> str:

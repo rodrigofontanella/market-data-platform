@@ -1,13 +1,12 @@
 import logging
 
 from confluent_kafka import Message, Producer
+from market_core import TradeEvent
 
 from app.metrics import (
     PRODUCER_PUBLISH_FAILURES_TOTAL,
     TRADES_PUBLISHED_TOTAL,
 )
-from market_core import TradeEvent
-
 
 logger = logging.getLogger(__name__)
 

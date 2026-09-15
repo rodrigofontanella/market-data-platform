@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from contextvars import ContextVar, Token
 
-
 _request_id_context: ContextVar[str | None] = ContextVar(
     "request_id",
     default=None,

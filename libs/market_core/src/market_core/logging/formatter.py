@@ -6,7 +6,6 @@ import traceback
 from datetime import UTC, datetime
 from typing import Any
 
-
 _STANDARD_LOG_RECORD_FIELDS = {
     "args",
     "asctime",

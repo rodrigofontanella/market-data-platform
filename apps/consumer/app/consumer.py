@@ -1,8 +1,10 @@
 import json
 import logging
+import time
 from typing import Any
 
 from confluent_kafka import Consumer, KafkaError, KafkaException, Message
+from market_core import TradeEvent
 from pydantic import ValidationError
 from sqlalchemy.exc import (
     InterfaceError,
@@ -13,10 +15,6 @@ from sqlalchemy.exc import (
 from app.config import settings
 from app.database import SessionLocal, save_trade
 from app.dlq import DeadLetterProducer, DeadLetterPublishError
-from market_core import TradeEvent
-
-import time
-
 from app.metrics import (
     CONSUMER_FAILURES_TOTAL,
     CONSUMER_PROCESSING_DURATION_SECONDS,
@@ -27,7 +25,6 @@ from app.metrics import (
     TRADES_DEAD_LETTERED_TOTAL,
     TRADES_STORED_TOTAL,
 )
-
 
 logger = logging.getLogger(__name__)
 

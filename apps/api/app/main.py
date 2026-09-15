@@ -1,16 +1,15 @@
 import logging
-from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-
-from app.config import settings
-from app.routes import router
 from market_core.logging import configure_logging
-from app.middleware import RequestContextMiddleware
-from app.health import router as health_router
 from prometheus_client import make_asgi_app
 
+from app.config import settings
+from app.health import router as health_router
+from app.middleware import RequestContextMiddleware
+from app.routes import router
 
 # Configure logging before the application starts producing logs.
 configure_logging(

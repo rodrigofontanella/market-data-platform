@@ -1,7 +1,7 @@
 import pytest
+from app.queries import select_latest_trade, select_trades, select_trades_by_symbol
 from sqlalchemy.dialects import postgresql
 
-from app.queries import select_trades, select_latest_trade, select_trades_by_symbol
 
 @pytest.mark.parametrize(
     "statement",

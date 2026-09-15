@@ -3,11 +3,9 @@ from __future__ import annotations
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
-
 from market_core import Base
 from market_core.config import DatabaseSettings
-
+from sqlalchemy import engine_from_config, pool
 
 config = context.config
 

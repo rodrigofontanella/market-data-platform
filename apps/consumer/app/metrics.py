@@ -1,6 +1,5 @@
 from prometheus_client import Counter, Histogram
 
-
 TRADES_CONSUMED_TOTAL = Counter(
     "trades_consumed_total",
     "Total number of Kafka trade events received by the consumer",

@@ -13,10 +13,9 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import func, select, text
-
 from app.database import save_trade
 from market_core import Trade, TradeEvent
+from sqlalchemy import func, select, text
 
 pytestmark = pytest.mark.integration
 

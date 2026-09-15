@@ -16,7 +16,6 @@ from app.metrics import (
     HTTP_REQUESTS_TOTAL,
 )
 
-
 logger = logging.getLogger(__name__)
 
 EXCLUDED_METRIC_PATHS = {

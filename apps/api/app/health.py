@@ -11,7 +11,6 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import DatabaseSession
 
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter(

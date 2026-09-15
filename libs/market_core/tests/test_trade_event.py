@@ -9,9 +9,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-from pydantic import ValidationError
-
 from market_core import TradeEvent
+from pydantic import ValidationError
 
 
 def make_event(price: str) -> TradeEvent:

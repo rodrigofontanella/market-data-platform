@@ -1,16 +1,19 @@
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
+from market_core import Trade, TradeResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.database import get_session
-from market_core import Trade, TradeResponse
-from app.schemas import HealthResponse, SymbolResponse
-
 from app.database import DatabaseSession
-
-from app.queries import (normalize_symbol, select_distinct_symbols, select_latest_trade, select_trades, select_trades_by_symbol)
+from app.queries import (
+    normalize_symbol,
+    select_distinct_symbols,
+    select_latest_trade,
+    select_trades,
+    select_trades_by_symbol,
+)
+from app.schemas import HealthResponse, SymbolResponse
 
 router = APIRouter()
 

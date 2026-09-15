@@ -13,7 +13,6 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-
 from market_core import Trade
 
 pytestmark = pytest.mark.integration

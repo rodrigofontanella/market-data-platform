@@ -4,9 +4,8 @@ import logging
 import logging.config
 from typing import Literal
 
-from market_core.logging.formatter import JsonFormatter
 from market_core.logging.filter import RequestContextFilter
-
+from market_core.logging.formatter import JsonFormatter
 
 LogFormat = Literal["console", "json"]
 

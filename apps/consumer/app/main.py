@@ -1,11 +1,10 @@
 import logging
 
-from app.config import settings
-from app.consumer import TradeStorageConsumer
 from market_core.logging import configure_logging
-
 from prometheus_client import start_http_server
 
+from app.config import settings
+from app.consumer import TradeStorageConsumer
 
 configure_logging(
     service_name=settings.service_name,

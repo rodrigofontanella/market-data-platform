@@ -13,10 +13,8 @@ duplicates there are expected rather than exceptional.
 
 from __future__ import annotations
 
-import pytest
-
 import app.consumer
-
+import pytest
 from app.dlq import DeadLetterPublishError
 from tests.conftest import (
     FakeDeadLetterProducer,
@@ -27,7 +25,6 @@ from tests.conftest import (
     make_message,
     make_permanent_database_error,
 )
-
 
 OFFSET = 100
 

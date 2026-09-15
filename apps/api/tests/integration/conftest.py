@@ -16,10 +16,10 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from testcontainers.community.postgres import PostgresContainer
-from fastapi.testclient import TestClient
 
 # Pinned to the tag in docker/compose.postgres.yml. If those drift, these
 # tests stop being evidence about the database you actually run.
@@ -87,8 +87,8 @@ def db_session(migrated_engine: Engine, session_factory) -> Session:
 
 @pytest.fixture
 def client(db_session):
-    from app.main import app
     from app.database import get_session
+    from app.main import app
 
     app.dependency_overrides[get_session] = lambda: db_session
     try:

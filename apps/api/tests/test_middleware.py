@@ -7,10 +7,9 @@ PostgreSQL to check a label would be lying about what it depends on.
 
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
-
 from app.database import get_session
 from app.main import app
+from fastapi.testclient import TestClient
 
 
 class EmptySession:

@@ -4,20 +4,18 @@ import time
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
-from app.config import settings
-from app.producer import MarketDataProducer
 from market_core import TradeEvent
 from market_core.logging import configure_logging
-
 from prometheus_client import start_http_server
 
+from app.config import settings
 from app.metrics import (
     PRODUCER_ENQUEUE_DURATION_SECONDS,
     PRODUCER_PUBLISH_FAILURES_TOTAL,
     TRADES_GENERATED_TOTAL,
     TRADES_PUBLISHED_TOTAL,
 )
-
+from app.producer import MarketDataProducer
 
 configure_logging(
     service_name=settings.service_name,

@@ -11,11 +11,9 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy.exc import DataError, OperationalError
-
 from app.dlq import DeadLetterPublishError
 from market_core import TradeEvent
-
+from sqlalchemy.exc import DataError, OperationalError
 
 TOPIC = "market.trades.raw"
 PARTITION = 0

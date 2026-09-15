@@ -1,14 +1,11 @@
 from collections.abc import Generator
+from typing import Annotated
 
+from fastapi import Depends
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
-
-from typing import Annotated
-
-from fastapi import Depends
-
 
 engine = create_engine(
     settings.database_url,

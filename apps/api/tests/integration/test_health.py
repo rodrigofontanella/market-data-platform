@@ -1,8 +1,7 @@
 import pytest
-from sqlalchemy.exc import OperationalError
-
 from app.database import get_session
 from app.main import app
+from sqlalchemy.exc import OperationalError
 
 pytestmark = pytest.mark.integration
 

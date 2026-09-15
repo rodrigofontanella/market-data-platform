@@ -27,7 +27,6 @@ from datetime import UTC, datetime
 
 from confluent_kafka import KafkaException, Message, Producer
 
-
 logger = logging.getLogger(__name__)
 
 

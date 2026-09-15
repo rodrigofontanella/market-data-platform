@@ -18,11 +18,9 @@ only because save_trade() is idempotent on event_id.
 
 from __future__ import annotations
 
+import app.consumer
 import pytest
 from sqlalchemy.exc import OperationalError
-
-import app.consumer
-
 from tests.conftest import (
     FakeDeadLetterProducer,
     FakeKafkaConsumer,
@@ -32,7 +30,6 @@ from tests.conftest import (
     make_permanent_database_error,
     make_transient_database_error,
 )
-
 
 # Three consecutive offsets on the same partition. The middle one fails.
 FIRST_OFFSET = 100

@@ -2,12 +2,12 @@ import logging
 from collections.abc import Generator
 from decimal import Decimal
 
+from market_core import Trade, TradeEvent
 from sqlalchemy import create_engine
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
-from market_core import Trade, TradeEvent
 
 logger = logging.getLogger(__name__)
 
