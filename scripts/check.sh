@@ -13,7 +13,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
 FAILED=()
 RAN=0
-EXPECTED_CHECKS=4
+EXPECTED_CHECKS=6
 
 run() {
   local label="$1"; shift
@@ -28,6 +28,7 @@ run() {
   
 }
 
+run "ruff" .venv/bin/ruff check .
 
 PYTEST=".venv/bin/pytest"
 if [[ ! -x "${PYTEST}" ]]; then
@@ -51,10 +52,6 @@ run "alert rules" docker run --rm \
   --entrypoint promtool prom/prometheus \
   test rules /rules/market-data.rules.test.yml
 
-if [[ ${RAN} -ne ${EXPECTED_CHECKS} ]]; then
-  echo "expected ${EXPECTED_CHECKS} checks, ran ${RAN}" >&2
-  exit 1
-fi
 
 if [[ "${ALL}" == true ]]; then
   run "api" bash -c 'cd apps/api && ../../.venv/bin/pytest -q'
@@ -62,6 +59,10 @@ else
   run "api" bash -c 'cd apps/api && ../../.venv/bin/pytest -q -m "not integration"'
 fi
 
+if [[ ${RAN} -ne ${EXPECTED_CHECKS} ]]; then
+  echo "expected ${EXPECTED_CHECKS} checks, ran ${RAN}" >&2
+  exit 1
+fi
 
 if [[ ${#FAILED[@]} -gt 0 ]]; then
   echo "FAILED: ${FAILED[*]}"
