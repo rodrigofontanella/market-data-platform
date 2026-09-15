@@ -1,15 +1,16 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import distinct, select, text
+from fastapi import APIRouter, HTTPException, Query
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
 
 from app.database import get_session
 from market_core import Trade, TradeResponse
 from app.schemas import HealthResponse, SymbolResponse
 
 from app.database import DatabaseSession
+
+from app.queries import (normalize_symbol, select_distinct_symbols, select_latest_trade, select_trades, select_trades_by_symbol)
 
 router = APIRouter()
 
@@ -43,12 +44,7 @@ def health_check(session: DatabaseSession) -> HealthResponse:
 def list_symbols(
     session: DatabaseSession,
 ) -> list[SymbolResponse]:
-    statement = (
-        select(distinct(Trade.symbol))
-        .order_by(Trade.symbol)
-    )
-
-    symbols = session.scalars(statement).all()
+    symbols = session.scalars(select_distinct_symbols()).all()
 
     return [
         SymbolResponse(symbol=symbol)
@@ -72,14 +68,9 @@ def list_trades(
         Query(ge=0),
     ] = 0,
 ) -> list[Trade]:
-    statement = (
-        select(Trade)
-        .order_by(Trade.event_time.desc())
-        .offset(offset)
-        .limit(limit)
+    return list(
+        session.scalars(select_trades(limit=limit, offset=offset)).all()
     )
-
-    return list(session.scalars(statement).all())
 
 
 @router.get(
@@ -95,16 +86,14 @@ def list_trades_by_symbol(
         Query(ge=1, le=1000),
     ] = 100,
 ) -> list[Trade]:
-    normalized_symbol = symbol.upper()
+    normalized_symbol = normalize_symbol(symbol)
 
-    statement = (
-        select(Trade)
-        .where(Trade.symbol == normalized_symbol)
-        .order_by(Trade.event_time.desc(), Trade.id.desc())
-        .limit(limit)
+    trades = list(
+        session.scalars(
+            select_trades_by_symbol(symbol=normalized_symbol, limit=limit)
+        ).all()
     )
 
-    trades = list(session.scalars(statement).all())
 
     if not trades:
         raise HTTPException(
@@ -124,16 +113,9 @@ def get_latest_trade(
     symbol: str,
     session: DatabaseSession,
 ) -> Trade:
-    normalized_symbol = symbol.upper()
+    normalized_symbol = normalize_symbol(symbol)
 
-    statement = (
-        select(Trade)
-        .where(Trade.symbol == normalized_symbol)
-        .order_by(Trade.event_time.desc())
-        .limit(1)
-    )
-
-    trade = session.scalar(statement)
+    trade = session.scalar(select_latest_trade(symbol=normalized_symbol))
 
     if trade is None:
         raise HTTPException(

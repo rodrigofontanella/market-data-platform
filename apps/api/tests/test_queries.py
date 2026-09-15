@@ -1,15 +1,27 @@
+import pytest
 from sqlalchemy.dialects import postgresql
 
-from app.queries import select_trades
+from app.queries import select_trades, select_latest_trade, select_trades_by_symbol
 
+@pytest.mark.parametrize(
+    "statement",
+    [
+        pytest.param(select_trades(limit=100, offset=0), id="trades"),
+        pytest.param(
+            select_trades_by_symbol(symbol="AAPL", limit=100), id="trades_by_symbol"
+        ),
+        pytest.param(select_latest_trade(symbol="AAPL"), id="latest_trade"),
+    ],
+)
+def test_trade_queries_order_by_a_total_key(statement) -> None:
+    """event_time is not unique and SQL sorts are not stable, so ordering by it
+    alone leaves tied rows in planner order -- different between two identical
+    queries. id is unique and monotonic, so it makes the order deterministic.
 
-def test_trades_are_ordered_by_a_total_key() -> None:
-    """event_time alone is not unique, and SQL sorts are not stable. Without a
-    tiebreaker the order of equal timestamps is whatever the planner does, and
-    OFFSET paging over it can skip or repeat rows."""
-    compiled = str(
-        select_trades(limit=100, offset=0).compile(dialect=postgresql.dialect())
-    )
+    For latest_trade this is not cosmetic: LIMIT 1 over tied timestamps returns
+    a wrong answer, silently, and possibly a different one each call.
+    """
+    compiled = str(statement.compile(dialect=postgresql.dialect()))
     normalised = " ".join(compiled.split())
 
     assert "ORDER BY trades.event_time DESC, trades.id DESC" in normalised

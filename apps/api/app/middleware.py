@@ -45,6 +45,7 @@ def _resolve_request_id(request: Request) -> str:
     return str(uuid4())
 
 
+
 def _get_route_template(request: Request) -> str:
     route = request.scope.get("route")
 

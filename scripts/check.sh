@@ -56,6 +56,12 @@ if [[ ${RAN} -ne ${EXPECTED_CHECKS} ]]; then
   exit 1
 fi
 
+if [[ "${ALL}" == true ]]; then
+  run "api" bash -c 'cd apps/api && ../../.venv/bin/pytest -q'
+else
+  run "api" bash -c 'cd apps/api && ../../.venv/bin/pytest -q -m "not integration"'
+fi
+
 
 if [[ ${#FAILED[@]} -gt 0 ]]; then
   echo "FAILED: ${FAILED[*]}"
