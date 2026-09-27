@@ -7,8 +7,10 @@
 #
 #   python3 -m venv .venv
 #   .venv/bin/pip install -r requirements-dev.txt
-#   .venv/bin/pip install -e libs/market_core
 #   .venv/bin/pip install -r apps/consumer/requirements.txt
+#   .venv/bin/pip install -r apps/api/requirements.txt
+#   .venv/bin/pip install -e libs/market_core
+#   .venv/bin/pip install -e libs/market_testing
 #
 # The consumer's runtime requirements are needed even though the unit tests
 # touch neither Kafka nor PostgreSQL: app/consumer.py imports confluent_kafka at

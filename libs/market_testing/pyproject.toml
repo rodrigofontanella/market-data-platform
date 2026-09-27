@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "market-testing"
+version = "0.1.0"
+description = "Shared pytest fixtures: a migrated PostgreSQL container for integration tests"
+requires-python = ">=3.12"
+dependencies = [
+    "pytest",
+    "testcontainers",
+    "alembic",
+    "sqlalchemy",
+    "psycopg[binary]",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

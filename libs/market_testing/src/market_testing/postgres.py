@@ -30,6 +30,13 @@ def _repo_root() -> Path:
 
     Counting parents ("../../../..") works right up until someone moves this
     file. Searching upward for alembic.ini does not care where the suite lives.
+
+    It does care where THIS file lives, now that it lives in an installed
+    package: the walk starts at market_testing's own path, which is inside the
+    repository only because the package is installed editable. A non-editable
+    install puts this module under site-packages, where the walk either finds
+    nothing -- or, because .venv sits inside the repository, finds the right
+    alembic.ini for the wrong reason and fails only somewhere .venv does not.
     """
     for candidate in Path(__file__).resolve().parents:
         if (candidate / "alembic.ini").is_file():
