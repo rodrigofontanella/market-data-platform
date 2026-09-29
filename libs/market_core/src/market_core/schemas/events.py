@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class TradeEvent(BaseModel):
@@ -30,3 +30,27 @@ class TradeEvent(BaseModel):
         default=1,
         ge=1,
     )
+
+    @field_validator("symbol", mode="before")
+    @classmethod
+    def _uppercase_symbol(cls, value: object) -> object:
+        """Uppercase at the schema, so storage and lookup cannot disagree.
+
+        save_trade() inserts event.symbol verbatim, while the API's
+        normalize_symbol() uppercases the incoming query. A lowercase symbol
+        reaching the table is therefore written in a form no lookup can find.
+        The rule belongs here for the same reason the price bounds do: both
+        services inherit it from the schema instead of each remembering to
+        apply it. normalize_symbol() still owns the query side, because a URL
+        path parameter never passes through this model.
+
+        mode="before" is load-bearing, not stylistic. An "after" transform runs
+        AFTER max_length is checked, and case folding can lengthen a string --
+        "ß".upper() is "SS" -- so a 20-character symbol could leave this model
+        21 characters long and be truncated by a VARCHAR(20) column. Upper-
+        casing first is what keeps max_length=20 a claim about storage.
+        """
+        if isinstance(value, str):
+            return value.upper()
+
+        return value

@@ -16,11 +16,22 @@ from sqlalchemy import Select, distinct, select
 
 
 def normalize_symbol(symbol: str) -> str:
-    """The one definition of what a symbol looks like in storage.
+    """Put an inbound query into the form the column already stores.
 
     Called by the queries below, and by the routes that echo the symbol back in
-    a 404 message. If the rule ever grows -- stripping whitespace, handling a
-    class suffix like BRK.B -- it grows here and everywhere follows.
+    a 404 message. A URL path parameter never passes through TradeEvent, so the
+    read side has to apply the rule itself: /trades/aapl and /trades/AAPL are
+    the same request.
+
+    This is not the definition, though it used to claim to be. The write side is
+    enforced in market_core: TradeEvent's symbol validator uppercases before
+    anything is stored, which is why save_trade() can insert event.symbol
+    verbatim. So one rule now has two implementations, and nothing keeps them
+    honest -- if it ever grows past .upper() (stripping whitespace, handling a
+    class suffix like BRK.B) it has to grow in both places, or the API starts
+    looking for rows in a shape the consumer never wrote. At that point the rule
+    moves into market_core and both sides call it; for a single .upper() the
+    duplication is cheaper than the indirection.
     """
     return symbol.upper()
 
