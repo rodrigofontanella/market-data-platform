@@ -1,7 +1,15 @@
-fastapi
-uvicorn[standard]
-sqlalchemy
-psycopg[binary]
-pydantic-settings
-alembic
-prometheus-client
+# Runtime dependencies for the API, pinned to the versions the image resolved
+# on 2026-09-29 (docker run --rm market-data-platform-python pip freeze).
+# Direct dependencies only -- the transitive tree still floats, so this is not
+# a lockfile. See requirements-dev.txt for that argument.
+#
+# NOT here: httpx2, which Starlette's TestClient needs. Nothing the service
+# imports needs it, so it lives in requirements-dev.txt.
+
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+sqlalchemy==2.0.52
+psycopg[binary]==3.3.5
+pydantic-settings==2.15.0
+alembic==1.20.0
+prometheus-client==0.26.0

@@ -1,6 +1,15 @@
-confluent-kafka
-pydantic
-pydantic-settings
-SQLAlchemy
-psycopg[binary]
-prometheus-client
+# Runtime dependencies for the storage consumer, pinned to the versions the
+# image resolved on 2026-09-29 (docker run --rm market-data-platform-python pip
+# freeze). Direct dependencies only -- the transitive tree still floats, so
+# this is not a lockfile. See requirements-dev.txt for that argument.
+#
+# confluent-kafka was 2.15.0 in the venv and 2.15.1 in the image: the same bare
+# name resolved twice, months apart, with nobody deciding. Pinned to the image's
+# version so the Level 2a consumer tests run against what production runs.
+
+confluent-kafka==2.15.1
+pydantic==2.13.5
+pydantic-settings==2.15.0
+sqlalchemy==2.0.52
+psycopg[binary]==3.3.5
+prometheus-client==0.26.0

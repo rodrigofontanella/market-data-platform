@@ -1,4 +1,9 @@
-confluent-kafka
-pydantic
-pydantic-settings
-prometheus-client
+# Runtime dependencies for the producer, pinned to the versions the image
+# resolved on 2026-09-29 (docker run --rm market-data-platform-python pip
+# freeze). Direct dependencies only -- the transitive tree still floats, so
+# this is not a lockfile. See requirements-dev.txt for that argument.
+
+confluent-kafka==2.15.1
+pydantic==2.13.5
+pydantic-settings==2.15.0
+prometheus-client==0.26.0

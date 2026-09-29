@@ -34,11 +34,13 @@ pytest==9.1.1
 # httpx. Nothing in the services imports it, so it belongs here rather than in
 # apps/api/requirements.txt.
 #
-# It was installed transitively for a while, which is why the api suite
-# collected before this line existed -- and why a fresh venv built from the
-# sequence above would eventually have stopped collecting, on a machine where
-# everything passed the day before. `pip show httpx` finding nothing while
-# `import httpx` also failed is what surfaced it.
+# It was installed by hand and never declared. `pip show httpx2` reports an
+# empty Required-by, and the production image has starlette without it -- so
+# nothing pulled it in, here or anywhere. The api suite collected on this
+# machine and would not have collected in any venv built from the sequence
+# above. What surfaced it: `pip show httpx` finding nothing while `import
+# httpx` also failed, because Starlette 1.x wants httpx2 and the name in the
+# docs was right all along.
 httpx2==2.12.0
 
 # Integration tests (apps/consumer and apps/api) only. These need a

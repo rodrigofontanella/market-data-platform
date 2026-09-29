@@ -48,7 +48,6 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
-
 import pytest
 from confluent_kafka import KafkaException, Producer
 from market_core import TradeEvent
