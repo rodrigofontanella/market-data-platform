@@ -30,7 +30,18 @@
 
 pytest==9.1.1
 
-# Integration tests (apps/consumer/tests/integration) only. These need a
+# Starlette's TestClient (apps/api/tests/integration) is built on httpx2, not
+# httpx. Nothing in the services imports it, so it belongs here rather than in
+# apps/api/requirements.txt.
+#
+# It was installed transitively for a while, which is why the api suite
+# collected before this line existed -- and why a fresh venv built from the
+# sequence above would eventually have stopped collecting, on a machine where
+# everything passed the day before. `pip show httpx` finding nothing while
+# `import httpx` also failed is what surfaced it.
+httpx2==2.12.0
+
+# Integration tests (apps/consumer and apps/api) only. These need a
 # reachable Docker daemon -- testcontainers starts a real postgres:16 per test
 # session. They are excluded by default; ./scripts/check.sh --all includes them.
 #
