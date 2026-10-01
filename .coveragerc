@@ -1,0 +1,32 @@
+# Coverage for ./scripts/check.sh, which points every suite here with
+# COVERAGE_RCFILE. Coverage only looks for config in the current directory,
+# and each suite runs from its own (apps/<service>, libs/market_core), so
+# without that variable this file would never be read.
+#
+# What to measure lives here. Where the data goes (COVERAGE_FILE) is set in
+# check.sh: a relative data_file would resolve against each suite's directory,
+# leaving four data files in four places and nothing at the root to combine.
+
+[run]
+# One data file per pytest process, combined by check.sh at the end.
+parallel = true
+
+# By import name, so "app" means the app package of whichever suite is
+# running. Test files are not measured.
+source_pkgs =
+    app
+    market_core
+    market_testing
+
+# relative_files stays OFF, deliberately. It records paths relative to each
+# suite's directory, so apps/api/app/main.py and apps/consumer/app/main.py
+# both become app/main.py and combine merges two files into one, with no
+# error. Absolute paths are unique, and every suite runs in one checkout.
+#
+# module-not-imported is expected: market_core's suite never imports app,
+# producer never imports market_testing. check.sh asserts instead that every
+# source root has data, which is the property that matters.
+disable_warnings = module-not-imported
+
+[report]
+skip_empty = true

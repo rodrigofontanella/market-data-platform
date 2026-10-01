@@ -48,3 +48,6 @@ dist/
 
 # Markdowns
 *.md
+
+.coverage
+.coverage.*

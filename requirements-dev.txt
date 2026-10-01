@@ -30,6 +30,11 @@
 
 pytest==9.1.1
 
+# Coverage for ./scripts/check.sh. Every suite runs under `coverage run`;
+# config is .coveragerc at the repo root, reached through COVERAGE_RCFILE.
+
+coverage==7.16.2
+
 # Starlette's TestClient (apps/api/tests/integration) is built on httpx2, not
 # httpx. Nothing in the services imports it, so it belongs here rather than in
 # apps/api/requirements.txt.
@@ -41,6 +46,7 @@ pytest==9.1.1
 # above. What surfaced it: `pip show httpx` finding nothing while `import
 # httpx` also failed, because Starlette 1.x wants httpx2 and the name in the
 # docs was right all along.
+
 httpx2==2.12.0
 
 # Integration tests (apps/consumer and apps/api) only. These need a
@@ -49,6 +55,7 @@ httpx2==2.12.0
 #
 # psycopg carries the [binary] extra on purpose: the pure-Python package needs
 # libpq and a compiler at install time, which the binary wheel avoids.
+
 alembic==1.20.0
 docker==7.2.0
 psycopg[binary]==3.3.5
