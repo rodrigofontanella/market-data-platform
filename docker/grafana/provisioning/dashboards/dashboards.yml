@@ -1,0 +1,34 @@
+# Dashboard provider for Grafana: where to find dashboard JSON, and the rules
+# for it. The dashboards themselves are the *.json files in
+# docker/grafana/dashboards/, mounted (as a directory) at /etc/grafana/dashboards.
+#
+# The files are the only definition. Grafana has no data volume, so a
+# recreate starts from an empty database and loads everything from here.
+
+apiVersion: 1
+
+providers:
+  - name: market-data-platform
+    type: file
+    folder: Market Data Platform
+
+    # A save from the UI is refused ("Cannot save provisioned dashboard").
+    # To change a dashboard: edit in the UI, copy the JSON model into the file,
+    # commit. The browser is a scratchpad; the file is the dashboard.
+    allowUiUpdates: false
+
+    # Deleting a JSON file deletes the dashboard. true would keep it in the
+    # database after its file is gone -- a dashboard with no definition, until
+    # the next recreate silently removes it anyway.
+    disableDeletion: false
+
+    # Rescan the directory every 10s, so a changed JSON file shows up without
+    # restarting Grafana. Only works because compose mounts the directory, not
+    # single files (a single-file bind mount keeps the old inode when an editor
+    # saves by rename).
+    updateIntervalSeconds: 10
+
+    options:
+      # Container path. Must match the mount target in compose.grafana.yml.
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false

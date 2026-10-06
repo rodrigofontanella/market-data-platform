@@ -1,0 +1,36 @@
+# Provisioned Prometheus datasource for Grafana.
+#
+# Grafana reads this file at startup. The Grafana service has no data volume,
+# so every recreate starts from an empty database and this file is the only
+# place the datasource comes from. editable: false keeps the UI from drifting
+# away from it -- the same reasoning as allowUiUpdates: false for dashboards.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+
+    # Every provisioned dashboard references the datasource by this uid, not
+    # by name. Without a fixed uid Grafana generates a random one per fresh
+    # database, and exported dashboard JSON points at a uid that no longer
+    # exists ("datasource not found"). Renaming it means editing every panel.
+    uid: prometheus
+
+    # proxy: the Grafana server makes the request, so this is a
+    # container-to-container address on market-data-network -- the service
+    # name and container port, as prometheus.yml addresses api:8000. Not
+    # localhost (that is the Grafana container itself).
+    access: proxy
+    url: http://prometheus:9090
+
+    isDefault: true
+    editable: false
+
+    jsonData:
+      # MUST equal global.scrape_interval in docker/prometheus/prometheus.yml.
+      # $__rate_interval = max($__interval + timeInterval, 4 * timeInterval),
+      # and it is only right if this is the real scrape interval. Prometheus
+      # does not expand environment variables in its config, so the two
+      # values cannot share one variable -- this comment is the link.
+      timeInterval: 15s

@@ -1,0 +1,56 @@
+# Grafana: visualization only (docs/market-data.md §38). Prometheus keeps
+# collection, storage and rule evaluation. Nothing in the pipeline depends on
+# this service, which is why it has its own file, like compose.kafka-ui.yml.
+#
+# Merged in by scripts/compose.sh. The network, and the prometheus service the
+# provisioned datasource points at, come from docker/compose.yml.
+
+services:
+  grafana:
+    # Pinned. Digest when pinned (Leeloo, 2026-10-02):
+    # sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+    image: grafana/grafana:13.2.3
+    container_name: market-data-grafana
+
+    ports:
+      # Container side is the image's declared port (EXPOSE 3000/tcp).
+      - "127.0.0.1:${GRAFANA_HOST_PORT}:3000"
+
+    environment:
+      # Read only when Grafana creates its database. There is no data volume,
+      # so that is every recreate, and .env is the only definition.
+      # ":?" fails if the variable is unset OR empty; plain "?" would let an
+      # empty value through and Grafana would fall back to its default.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+
+      # Decided, not defaulted (the default is also false): no display needs
+      # anonymous access. Turning it on later is this one line. Quoted:
+      # compose rejects a bare YAML boolean in environment.
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+
+    volumes:
+      # Directories, not single files: a single-file bind mount keeps the old
+      # inode when an editor saves by rename, so the dashboard rescan
+      # (updateIntervalSeconds) would never see the change.
+      # The two provisioning subdirectories are mounted individually rather
+      # than the whole of /etc/grafana/provisioning, so the image's other
+      # provisioning directories (alerting, plugins, ...) stay as shipped.
+      # Read-only: the repo is the definition. The image runs as uid 472, so
+      # these files must be world-readable (664 files / 775 dirs are).
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+
+    # No data volume, on purpose: everything worth keeping is provisioned.
+    # No depends_on, on purpose: Grafana does not contact Prometheus at
+    # startup, and staying out of the dependency graph means starting or
+    # recreating Grafana never touches the pipeline.
+
+    networks:
+      - market-data-network
+
+    restart: unless-stopped
+
+networks:
+  market-data-network:
+    name: market-data-network
